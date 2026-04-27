@@ -42,18 +42,19 @@ jobs:
           s3-bucket: ${{ secrets.REVIEW_HARNESS_S3_BUCKET }}
 ```
 
-> **必要なシークレット**
-> | シークレット | 用途 |
-> |---|---|
-> | `AWS_ROLE_ARN` | S3 への読み書き権限を持つ IAM ロール（OIDC） |
-> | `REVIEW_HARNESS_S3_BUCKET` | メモリ DB を保存する S3 バケット名 |
+**必要なシークレット**
+
+| シークレット | 用途 |
+| --- | --- |
+| `AWS_ROLE_ARN` | S3 への読み書き権限を持つ IAM ロール（OIDC） |
+| `REVIEW_HARNESS_S3_BUCKET` | メモリ DB を保存する S3 バケット名 |
 
 ---
 
 ## Action インプット一覧
 
 | インプット | デフォルト | 説明 |
-|---|---|---|
+| --- | --- | --- |
 | `pr-number` | — | レビューする PR 番号（**必須**） |
 | `github-token` | `github.token` | pull-requests: write 権限を持つ GitHub トークン |
 | `agent` | `codex` | 使用するエージェント名（後述） |
@@ -76,7 +77,7 @@ jobs:
 ### 組み込みエージェント
 
 | 名前 | コマンド | 動作 |
-|---|---|---|
+| --- | --- | --- |
 | `codex`（デフォルト） | `codex exec` | stdin でプロンプトを渡し `--output-last-message` で JSON を取得 |
 | `claude` | `claude -p` | stdin でプロンプトを渡して JSON を取得 |
 
@@ -118,7 +119,7 @@ agent:
 ```
 
 | フィールド | 型 | 説明 |
-|---|---|---|
+| --- | --- | --- |
 | `file_path` | string | 対象ファイル |
 | `start_line` / `end_line` | int | 問題の行範囲（新ファイル基準） |
 | `title` | string | 短いタイトル（80 文字以内） |
@@ -254,11 +255,11 @@ PR に人間がコメントを返した場合、`sync` で過去の判定結果�
 
 ```bash
 cd review-harness
-go build -o review-harness ./cmd/review-harness
+go build -o review-harness-bin ./cmd/review-harness
 
 # dry-run（GitHub に投稿しない）
 GITHUB_TOKEN=ghp_xxx \
-  ./review-harness review \
+  ./review-harness-bin review \
     --repo owner/repo \
     --pr 42 \
     --agent codex \
@@ -269,7 +270,7 @@ GITHUB_TOKEN=ghp_xxx \
 GITHUB_TOKEN=ghp_xxx \
 ANTHROPIC_API_KEY=sk-ant-xxx \
 OPENAI_API_KEY=sk-xxx \
-  ./review-harness review \
+  ./review-harness-bin review \
     --repo owner/repo \
     --pr 42 \
     --storage s3 \
@@ -280,7 +281,7 @@ OPENAI_API_KEY=sk-xxx \
 
 ## アーキテクチャ
 
-```
+```text
 GitHub Pull Request
   ↓
 review-harness
@@ -297,20 +298,103 @@ review-harness
 レビューメモリの 3 層構造：
 
 | 層 | 内容 |
-|---|---|
+| --- | --- |
 | `raw_comment` | エージェントが生成した元のコメント |
 | `canonical_claim` | コメントの本質的な主張を正規化したもの |
 | `outcome_summary` | 人間の反応・最終判断の要約 |
 
 ハイブリッド検索スコアリング（デフォルト）：
 
-```
+```text
 score = 0.45 × ベクトル類似度
       + 0.25 × 全文検索スコア (FTS5)
       + 0.15 × ファイルパス一致
       + 0.10 × シンボル一致
       + 0.05 × ラベル一致
 ```
+
+---
+
+## RAG とコードインデックスの仕組み
+
+### RAG（Retrieval-Augmented Generation）
+
+review-harness の RAG は以下の流れで動作します。
+
+#### 1. Finding の canonical claim 化
+
+エージェントが生成した `Finding.Body`（生コメント）を Claude API に渡し、言語・表現に依存しない **canonical claim**（正規化された主張）を生成します。
+
+```
+"This may panic when user is nil."
+  ↓ Claude API (interpreter/canonicalize.go)
+"user が nil の場合に panic する可能性がある"
+```
+
+同じ問題を別の言い回しで指摘しても、canonical claim レベルで一致を検出できます。
+
+#### 2. Embedding の生成と保存
+
+canonical claim を OpenAI `text-embedding-3-small` でベクトル化し、SQLite の `comment_embeddings` テーブルに JSON BLOB として保存します（`internal/memory/sqlite.go`）。
+
+#### 3. ハイブリッド検索（`internal/memory/retrieval.go`）
+
+新しい Finding が来るたびに過去メモリをハイブリッド検索します。
+
+```
+FTS5 全文検索（BM25）
+  … 関数名・型名・エラー文字列など固有名詞に強い
+
+コサイン類似度（Go で計算）
+  … 言い換えや翻訳に強い
+
+ファイルパス / シンボル一致ボーナス
+  … 同じ場所の過去指摘を優先
+```
+
+スコアを合算して上位 N 件（`judge.max_candidates`）を Review Judge に渡します。
+
+#### 4. Review Judge による判定
+
+Judge は「過去コメントが今回の diff にも適用されるか」を Claude API で判定します（`internal/judge/judge.go`）。
+
+```json
+{
+  "same_underlying_issue": true,
+  "applies_to_current_diff": false,
+  "prior_outcome": "false_positive",
+  "recommended_action": "suppress",
+  "reason": "過去の指摘は REST handler の validation 不足だが、今回は internal batch 処理"
+}
+```
+
+`recommended_action: suppress` の場合はそのコメントを投稿しません。
+
+---
+
+### コードインデックス（現状と予定）
+
+#### 現状（MVP）
+
+現在のコードインデックスは **diff テキストのみ** です。エージェントには `git diff` の生テキストを渡しており、シンボル解析・呼び出しグラフ・関連テスト探索は行っていません。
+
+```
+PR diff (raw text)
+  → エージェントへのプロンプトに埋め込む (internal/agent/shell.go)
+```
+
+#### v1 予定
+
+`plan.md` §15 に記載されている v1 スコープで以下を追加予定：
+
+| 機能 | 実装予定箇所 | 効果 |
+| --- | --- | --- |
+| **tree-sitter 解析** | `internal/index/symbols.go` | 変更された関数・型・変数を特定 |
+| **LSP 連携**（gopls など） | `internal/lsp/` | 定義元・参照元のシンボルを取得 |
+| **関連テスト探索** | `internal/context/related_tests.go` | 対象関数のテストファイルをコンテキストに追加 |
+| **呼び出しグラフ** | `internal/index/chunks.go` | 変更の影響範囲を推定 |
+
+これらが揃うと、エージェントへのプロンプトに「この関数を呼んでいる箇所」「対応するテスト」「型定義」を含められるようになり、より精度の高い Finding が生成されます。
 
 ---
 
