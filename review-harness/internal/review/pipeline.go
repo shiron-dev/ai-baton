@@ -4,13 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/sashabaranov/go-openai"
 	"github.com/shiron-dev/ai-baton/internal/agent"
 	"github.com/shiron-dev/ai-baton/internal/config"
+	"github.com/shiron-dev/ai-baton/internal/embedder"
 	"github.com/shiron-dev/ai-baton/internal/githubadapter"
 	"github.com/shiron-dev/ai-baton/internal/interpreter"
 	"github.com/shiron-dev/ai-baton/internal/judge"
@@ -27,7 +26,7 @@ type Pipeline struct {
 	store         memory.Store
 	retriever     *memory.Retriever
 	canonicalizer *interpreter.Canonicalizer
-	embedder      *openaiEmbedder
+	embedder      embedder.Embedder
 	judger        judge.Judge
 	filter        *Filter
 	publisher     *Publisher
@@ -117,12 +116,9 @@ func NewPipeline(ctx context.Context, opts PipelineOptions) (*Pipeline, error) {
 		canonicalizer = interpreter.NewCanonicalizer(opts.AnthropicKey, cfg.Judge.Model)
 	}
 
-	var embedder *openaiEmbedder
+	var emb embedder.Embedder
 	if opts.OpenAIKey != "" {
-		embedder = &openaiEmbedder{
-			client: openai.NewClient(opts.OpenAIKey),
-			model:  cfg.Memory.Embedding.Model,
-		}
+		emb = embedder.NewOpenAI(opts.OpenAIKey, cfg.Memory.Embedding.Model)
 	}
 
 	var judger judge.Judge
@@ -146,7 +142,7 @@ func NewPipeline(ctx context.Context, opts PipelineOptions) (*Pipeline, error) {
 		store:         store,
 		retriever:     retriever,
 		canonicalizer: canonicalizer,
-		embedder:      embedder,
+		embedder:      emb,
 		judger:        judger,
 		filter:        filter,
 		publisher:     publisher,
@@ -185,10 +181,20 @@ func (p *Pipeline) Run(ctx context.Context, prNumber int) (*RunResult, error) {
 		return nil, fmt.Errorf("get diff: %w", err)
 	}
 
+	// Build patch map for Enrich.
+	patches := make(map[string]string, len(diff.Files))
+	for _, f := range diff.Files {
+		patches[f.Filename] = f.Patch
+	}
+
+	// Fetch a few recent memories to give the agent awareness of past issues.
+	memoryCtx := p.buildMemoryContext(ctx)
+
 	// Step 6: run AI agent
 	agentReq := agent.ReviewRequest{
-		Diff:   diff.RawDiff,
-		Prompt: "",
+		Diff:          diff.RawDiff,
+		MemoryContext: memoryCtx,
+		Prompt:        "",
 	}
 	agentResult, err := p.reviewAgent.RunReview(ctx, agentReq)
 	if err != nil {
@@ -196,9 +202,10 @@ func (p *Pipeline) Run(ctx context.Context, prNumber int) (*RunResult, error) {
 	}
 	slog.Info("agent findings", "count", len(agentResult.Findings))
 
-	// Step 7: normalize and deduplicate
+	// Step 7: normalize, deduplicate, and enrich
 	findings := interpreter.Normalize(agentResult.Findings, p.cfg.Review.MinConfidence)
 	findings = interpreter.Dedupe(findings)
+	findings = interpreter.Enrich(findings, patches)
 
 	// Step 8: generate canonical claims
 	if p.canonicalizer != nil {
@@ -222,6 +229,7 @@ func (p *Pipeline) Run(ctx context.Context, prNumber int) (*RunResult, error) {
 			Text:     claim,
 			Vector:   queryVec,
 			FilePath: f.FilePath,
+			Symbol:   f.Symbol,
 			Limit:    p.cfg.Judge.MaxCandidates,
 		})
 		if err != nil {
@@ -267,7 +275,7 @@ func (p *Pipeline) Run(ctx context.Context, prNumber int) (*RunResult, error) {
 			if p.embedder != nil {
 				claim := interpreter.ExtractCanonicalClaim(&f)
 				vec, err := p.embedder.Embed(ctx, claim)
-				if err == nil {
+				if err == nil && len(vec) > 0 {
 					_ = p.store.SaveEmbedding(ctx, id, vec)
 				}
 			}
@@ -303,6 +311,29 @@ func (p *Pipeline) Sync(ctx context.Context, prNumber int) error {
 	return nil
 }
 
+// buildMemoryContext fetches recent repo memories to provide context to the agent.
+func (p *Pipeline) buildMemoryContext(ctx context.Context) []schema.MemoryHit {
+	memories, err := p.store.ListByRepo(ctx, p.repo, 5)
+	if err != nil || len(memories) == 0 {
+		return nil
+	}
+	hits := make([]schema.MemoryHit, 0, len(memories))
+	for _, m := range memories {
+		claim := m.CanonicalClaim
+		if claim == "" {
+			claim = m.RawComment
+		}
+		hits = append(hits, schema.MemoryHit{
+			MemoryID:       m.ID,
+			CommentText:    m.RawComment,
+			CanonicalClaim: claim,
+			Outcome:        m.Outcome,
+			OutcomeSummary: m.OutcomeSummary,
+		})
+	}
+	return hits
+}
+
 func filterByPR(memories []*schema.ReviewMemory, prNumber int) []*schema.ReviewMemory {
 	var result []*schema.ReviewMemory
 	for _, m := range memories {
@@ -315,15 +346,17 @@ func filterByPR(memories []*schema.ReviewMemory, prNumber int) []*schema.ReviewM
 
 func findingToMemory(f schema.Finding, repo string, prNumber int, agentName string) *schema.ReviewMemory {
 	return &schema.ReviewMemory{
-		ID:             uuid.New().String(),
-		Repo:           repo,
-		PRNumber:       prNumber,
-		Agent:          agentName,
-		FilePath:       f.FilePath,
-		RawComment:     f.Body,
-		CanonicalClaim: interpreter.ExtractCanonicalClaim(&f),
-		Outcome:        schema.OutcomePending,
-		CreatedAt:      time.Now().UTC(),
+		ID:                 uuid.New().String(),
+		Repo:               repo,
+		PRNumber:           prNumber,
+		Agent:              agentName,
+		FilePath:           f.FilePath,
+		Symbol:             f.Symbol,
+		RawComment:         f.Body,
+		CanonicalClaim:     interpreter.ExtractCanonicalClaim(&f),
+		CodeContextSummary: f.CodeContextSummary,
+		Outcome:            schema.OutcomePending,
+		CreatedAt:          time.Now().UTC(),
 	}
 }
 
@@ -341,28 +374,4 @@ func buildBackend(ctx context.Context, cfg config.StorageConfig) (storage.Backen
 	default:
 		return storage.LocalBackend{}, nil
 	}
-}
-
-// openaiEmbedder wraps the OpenAI embedding API.
-type openaiEmbedder struct {
-	client *openai.Client
-	model  string
-}
-
-func (e *openaiEmbedder) Embed(ctx context.Context, text string) ([]float32, error) {
-	text = strings.TrimSpace(text)
-	if text == "" {
-		return nil, nil
-	}
-	resp, err := e.client.CreateEmbeddings(ctx, openai.EmbeddingRequestStrings{
-		Input: []string{text},
-		Model: openai.EmbeddingModel(e.model),
-	})
-	if err != nil {
-		return nil, err
-	}
-	if len(resp.Data) == 0 {
-		return nil, nil
-	}
-	return resp.Data[0].Embedding, nil
 }

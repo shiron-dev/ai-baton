@@ -21,7 +21,7 @@ func main() {
 		Level: slog.LevelInfo,
 	})))
 
-	rootCmd.AddCommand(reviewCmd(), syncCmd())
+	rootCmd.AddCommand(reviewCmd(), syncCmd(), embedCmd())
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -158,6 +158,61 @@ func syncCmd() *cobra.Command {
 	cmd.Flags().StringVar(&s3Region, "s3-region", "", "AWS region")
 	_ = cmd.MarkFlagRequired("repo")
 	_ = cmd.MarkFlagRequired("pr")
+	return cmd
+}
+
+func embedCmd() *cobra.Command {
+	var (
+		repo           string
+		configPath     string
+		storageBackend string
+		s3Bucket       string
+		s3Key          string
+		s3Region       string
+	)
+
+	cmd := &cobra.Command{
+		Use:   "embed",
+		Short: "Generate embeddings for memory entries that lack one",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := context.Background()
+			cfg, err := config.Load(configPath)
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+
+			opts := review.PipelineOptions{
+				Cfg:            cfg,
+				Repo:           repo,
+				GithubToken:    os.Getenv("GITHUB_TOKEN"),
+				OpenAIKey:      requireEnv("OPENAI_API_KEY"),
+				AnthropicKey:   os.Getenv("ANTHROPIC_API_KEY"),
+				StorageBackend: storageBackend,
+				S3Bucket:       s3Bucket,
+				S3Key:          s3Key,
+				S3Region:       s3Region,
+			}
+			pipeline, err := review.NewPipeline(ctx, opts)
+			if err != nil {
+				return fmt.Errorf("init pipeline: %w", err)
+			}
+			defer pipeline.Close()
+
+			n, err := pipeline.EmbedAll(ctx)
+			if err != nil {
+				return fmt.Errorf("embed: %w", err)
+			}
+			fmt.Printf("embedded %d memory entries\n", n)
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repo slug owner/repo")
+	cmd.Flags().StringVar(&configPath, "config", ".review-harness.yaml", "Config file path")
+	cmd.Flags().StringVar(&storageBackend, "storage", "", "Storage backend: local or s3 (overrides config)")
+	cmd.Flags().StringVar(&s3Bucket, "s3-bucket", "", "S3 bucket for memory storage")
+	cmd.Flags().StringVar(&s3Key, "s3-key", "", "S3 object key for memory DB")
+	cmd.Flags().StringVar(&s3Region, "s3-region", "", "AWS region")
 	return cmd
 }
 

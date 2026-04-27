@@ -125,16 +125,3 @@ func (r *Retriever) Search(ctx context.Context, q RetrievalQuery) ([]*schema.Mem
 	return hits, nil
 }
 
-// ftsEscape wraps a plain query string for FTS5 to avoid syntax errors.
-func ftsEscape(q string) string {
-	// Wrap in double quotes for phrase search; strip any internal quotes.
-	out := make([]byte, 0, len(q)+2)
-	out = append(out, '"')
-	for i := 0; i < len(q); i++ {
-		if q[i] != '"' {
-			out = append(out, q[i])
-		}
-	}
-	out = append(out, '"')
-	return string(out)
-}

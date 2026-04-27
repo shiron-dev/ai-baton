@@ -327,6 +327,30 @@ func (s *SQLiteStore) loadReplies(ctx context.Context, memoryID string) ([]schem
 	return replies, rows.Err()
 }
 
+func (s *SQLiteStore) ListWithoutEmbedding(ctx context.Context, limit int) ([]*schema.ReviewMemory, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT rc.id, rc.repo, rc.pr_number, rc.agent, rc.file_path, rc.symbol, rc.raw_comment,
+		       rc.canonical_claim, rc.code_context_summary, rc.outcome, rc.outcome_summary, rc.created_at
+		FROM review_comments rc
+		LEFT JOIN comment_embeddings ce ON ce.review_comment_id = rc.id
+		WHERE ce.review_comment_id IS NULL
+		ORDER BY rc.created_at DESC
+		LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var result []*schema.ReviewMemory
+	for rows.Next() {
+		m, err := scanMemory(rows)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, m)
+	}
+	return result, rows.Err()
+}
+
 func boolInt(b bool) int {
 	if b {
 		return 1

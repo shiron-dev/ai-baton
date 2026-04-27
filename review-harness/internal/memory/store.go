@@ -23,6 +23,9 @@ type Store interface {
 	// ListByRepo returns all memories for a given repo, ordered by created_at desc.
 	ListByRepo(ctx context.Context, repo string, limit int) ([]*schema.ReviewMemory, error)
 
+	// ListWithoutEmbedding returns memories that have no embedding stored yet, up to limit.
+	ListWithoutEmbedding(ctx context.Context, limit int) ([]*schema.ReviewMemory, error)
+
 	// SaveEmbedding stores the embedding vector for a memory.
 	SaveEmbedding(ctx context.Context, memoryID string, vector []float32) error
 
