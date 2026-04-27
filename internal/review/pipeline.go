@@ -196,8 +196,11 @@ func (p *Pipeline) Run(ctx context.Context, prNumber int) (*RunResult, error) {
 			continue
 		}
 		judgeResults[f.ID] = jr
-		if err := p.store.SaveJudgeResult(ctx, jr); err != nil {
-			slog.Warn("save judge result", "err", err)
+		// Only persist when a concrete memory match was used (memory_id is required by FK).
+		if jr.MemoryID != "" {
+			if err := p.store.SaveJudgeResult(ctx, jr); err != nil {
+				slog.Warn("save judge result", "err", err)
+			}
 		}
 	}
 
