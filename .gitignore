@@ -1,0 +1,27 @@
+# Binaries
+/review-harness
+*.exe
+
+# Go build cache
+vendor/
+
+# SQLite databases
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Config files with secrets
+*.local.yaml
+*.local.yml
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Review harness runtime data
+.review-harness/
