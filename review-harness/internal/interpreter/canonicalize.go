@@ -25,15 +25,16 @@ func NewCanonicalizer(apiKey, model string) *Canonicalizer {
 	return &Canonicalizer{client: &client, model: model}
 }
 
-// Canonicalize generates a canonical_claim for each Finding in-place.
-// Each claim is a language-neutral, concise summary of the core assertion.
+// Canonicalize sets Finding.CanonicalClaim for each finding in-place.
+// The claim is a language-neutral, concise summary of the core assertion,
+// independent of the reviewer's phrasing.
 func (c *Canonicalizer) Canonicalize(ctx context.Context, findings []schema.Finding) ([]schema.Finding, error) {
 	for i := range findings {
 		claim, err := c.generateClaim(ctx, &findings[i])
 		if err != nil {
 			return nil, fmt.Errorf("canonicalize finding %s: %w", findings[i].ID, err)
 		}
-		findings[i].Labels = appendUnique(findings[i].Labels, "canonical:"+claim)
+		findings[i].CanonicalClaim = claim
 	}
 	return findings, nil
 }
@@ -58,25 +59,14 @@ Output only the single sentence, nothing else.`, f.Title, f.Body)
 	if err != nil {
 		return "", err
 	}
-	claim := strings.TrimSpace(msg.Content[0].Text)
-	return claim, nil
+	return strings.TrimSpace(msg.Content[0].Text), nil
 }
 
-// ExtractCanonicalClaim retrieves the canonical claim stored as a label.
+// ExtractCanonicalClaim returns the canonical claim for a finding.
+// Falls back to Title when CanonicalClaim is empty.
 func ExtractCanonicalClaim(f *schema.Finding) string {
-	for _, l := range f.Labels {
-		if strings.HasPrefix(l, "canonical:") {
-			return strings.TrimPrefix(l, "canonical:")
-		}
+	if f.CanonicalClaim != "" {
+		return f.CanonicalClaim
 	}
 	return f.Title
-}
-
-func appendUnique(slice []string, s string) []string {
-	for _, existing := range slice {
-		if existing == s {
-			return slice
-		}
-	}
-	return append(slice, s)
 }

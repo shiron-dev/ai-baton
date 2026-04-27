@@ -20,4 +20,9 @@ type Finding struct {
 	Confidence     float64    `json:"confidence"`
 	Labels         []string   `json:"labels,omitempty"`
 	Evidence       []Evidence `json:"evidence,omitempty"`
+
+	// Populated by the Interpreter — not set by the agent.
+	CanonicalClaim     string `json:"canonical_claim,omitempty"`
+	Symbol             string `json:"symbol,omitempty"`
+	CodeContextSummary string `json:"code_context_summary,omitempty"`
 }

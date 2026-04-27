@@ -1,0 +1,128 @@
+name: 'AI Review Memory Harness'
+description: >
+  Run AI code review on a GitHub PR with persistent memory.
+  Past review outcomes (accepted / rejected / false positive) accumulate
+  across PRs and suppress redundant comments in future runs.
+author: 'shiron-dev'
+
+branding:
+  icon: 'message-square'
+  color: 'blue'
+
+inputs:
+  pr-number:
+    description: 'Pull request number to review'
+    required: true
+
+  github-token:
+    description: 'GitHub token with pull-requests: write permission'
+    required: false
+    default: ${{ github.token }}
+
+  # ── Agent ────────────────────────────────────────────────────────────────
+  agent:
+    description: >
+      Agent name to use. Must match a key under `agent.agents` in
+      .review-harness.yaml (or the built-in defaults: "codex", "claude").
+      Defaults to "codex".
+    required: false
+    default: 'codex'
+
+  # ── Storage ───────────────────────────────────────────────────────────────
+  storage-backend:
+    description: >
+      Where to persist the review memory database.
+      "s3"    – download before review, upload after (default).
+      "local" – keep the SQLite file on the runner (ephemeral; lost after run).
+    required: false
+    default: 's3'
+
+  s3-bucket:
+    description: >
+      S3 bucket that holds the memory database.
+      Required when storage-backend=s3.
+      AWS credentials must be configured before calling this action
+      (e.g. via aws-actions/configure-aws-credentials).
+    required: false
+
+  s3-key:
+    description: 'S3 object key for the memory database file.'
+    required: false
+    default: 'review-harness/memory.sqlite'
+
+  aws-region:
+    description: 'AWS region for S3 operations.'
+    required: false
+    default: 'us-east-1'
+
+  # ── API keys ──────────────────────────────────────────────────────────────
+  anthropic-api-key:
+    description: >
+      Anthropic API key.
+      Used for canonical-claim generation and the Review Judge.
+      Optional – judge and canonicalization are skipped when absent.
+    required: false
+
+  openai-api-key:
+    description: >
+      OpenAI API key.
+      Used for text-embedding-3-small to power vector search.
+      Optional – vector search is skipped when absent.
+    required: false
+
+  # ── Misc ─────────────────────────────────────────────────────────────────
+  config-file:
+    description: >
+      Path (relative to the caller's workspace) to a .review-harness.yaml
+      config file. Falls back to built-in defaults when the file is absent.
+    required: false
+    default: '.review-harness.yaml'
+
+  dry-run:
+    description: 'Set to "true" to print findings without posting to GitHub.'
+    required: false
+    default: 'false'
+
+  go-version:
+    description: 'Go version used to build review-harness.'
+    required: false
+    default: '1.24'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: true
+        cache-dependency-path: ${{ github.action_path }}/go.sum
+
+    - name: Build review-harness
+      shell: bash
+      run: |
+        cd "${{ github.action_path }}"
+        go build -o "$RUNNER_TEMP/review-harness" ./cmd/review-harness
+
+    - name: Run review
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+      run: |
+        ARGS=(
+          review
+          --repo "${{ github.repository }}"
+          --pr   "${{ inputs.pr-number }}"
+          --agent "${{ inputs.agent }}"
+          --config "${{ inputs.config-file }}"
+          --storage "${{ inputs.storage-backend }}"
+          --s3-key "${{ inputs.s3-key }}"
+          --s3-region "${{ inputs.aws-region }}"
+        )
+
+        [[ -n "${{ inputs.s3-bucket }}" ]] && ARGS+=(--s3-bucket "${{ inputs.s3-bucket }}")
+        [[ "${{ inputs.dry-run }}" == "true" ]] && ARGS+=(--dry-run)
+
+        "$RUNNER_TEMP/review-harness" "${ARGS[@]}"
