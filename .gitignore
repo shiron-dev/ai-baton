@@ -1,5 +1,5 @@
 # Binaries
-/review-harness
+/review-harness-bin
 *.exe
 
 # Go build cache
