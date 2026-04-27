@@ -8,6 +8,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  id-token: write   # required for OIDC-based AWS auth
 
 jobs:
   review:
@@ -17,46 +18,41 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v5
+      # Configure AWS credentials before calling the action.
+      # Replace with your preferred auth method (OIDC, access keys, etc.).
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          go-version: "1.24"
-          cache: true
-
-      - name: Install review-harness
-        run: go install github.com/shiron-dev/ai-baton/cmd/review-harness@latest
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
 
       - name: Run AI Review
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          review-harness review \
-            --repo "${{ github.repository }}" \
-            --pr "${{ github.event.pull_request.number }}" \
-            --config .review-harness.yaml
+        uses: ./review-harness   # use local copy; external repos use shiron-dev/ai-baton/review-harness@main
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          agent: codex
+          storage-backend: s3
+          s3-bucket: ${{ secrets.REVIEW_HARNESS_S3_BUCKET }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
   sync:
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' && github.event.action == 'synchronize'
+    if: github.event.action == 'synchronize'
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-go@v5
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          go-version: "1.24"
-          cache: true
-
-      - name: Install review-harness
-        run: go install github.com/shiron-dev/ai-baton/cmd/review-harness@latest
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
 
       - name: Sync human replies
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          review-harness sync \
-            --repo "${{ github.repository }}" \
-            --pr "${{ github.event.pull_request.number }}" \
-            --config .review-harness.yaml
+        uses: ./review-harness
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          storage-backend: s3
+          s3-bucket: ${{ secrets.REVIEW_HARNESS_S3_BUCKET }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}

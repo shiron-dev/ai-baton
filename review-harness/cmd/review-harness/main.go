@@ -30,11 +30,16 @@ func main() {
 
 func reviewCmd() *cobra.Command {
 	var (
-		repo        string
-		prNumber    int
-		configPath  string
-		agentName   string
-		dryRun      bool
+		repo       string
+		prNumber   int
+		configPath string
+		agentName  string
+		dryRun     bool
+		// storage flags
+		storageBackend string
+		s3Bucket       string
+		s3Key          string
+		s3Region       string
 	)
 
 	cmd := &cobra.Command{
@@ -51,12 +56,16 @@ func reviewCmd() *cobra.Command {
 			}
 
 			opts := review.PipelineOptions{
-				Cfg:          cfg,
-				Repo:         repo,
-				GithubToken:  requireEnv("GITHUB_TOKEN"),
-				OpenAIKey:    os.Getenv("OPENAI_API_KEY"),
-				AnthropicKey: os.Getenv("ANTHROPIC_API_KEY"),
-				DryRun:       dryRun,
+				Cfg:            cfg,
+				Repo:           repo,
+				GithubToken:    requireEnv("GITHUB_TOKEN"),
+				OpenAIKey:      os.Getenv("OPENAI_API_KEY"),
+				AnthropicKey:   os.Getenv("ANTHROPIC_API_KEY"),
+				DryRun:         dryRun,
+				StorageBackend: storageBackend,
+				S3Bucket:       s3Bucket,
+				S3Key:          s3Key,
+				S3Region:       s3Region,
 			}
 			pipeline, err := review.NewPipeline(ctx, opts)
 			if err != nil {
@@ -85,6 +94,10 @@ func reviewCmd() *cobra.Command {
 	cmd.Flags().StringVar(&configPath, "config", ".review-harness.yaml", "Config file path")
 	cmd.Flags().StringVar(&agentName, "agent", "", "Agent name (overrides config default)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print findings without posting to GitHub")
+	cmd.Flags().StringVar(&storageBackend, "storage", "", "Storage backend: local or s3 (overrides config)")
+	cmd.Flags().StringVar(&s3Bucket, "s3-bucket", "", "S3 bucket for memory storage")
+	cmd.Flags().StringVar(&s3Key, "s3-key", "", "S3 object key for memory DB")
+	cmd.Flags().StringVar(&s3Region, "s3-region", "", "AWS region")
 	_ = cmd.MarkFlagRequired("repo")
 	_ = cmd.MarkFlagRequired("pr")
 	return cmd
@@ -92,9 +105,13 @@ func reviewCmd() *cobra.Command {
 
 func syncCmd() *cobra.Command {
 	var (
-		repo       string
-		prNumber   int
-		configPath string
+		repo           string
+		prNumber       int
+		configPath     string
+		storageBackend string
+		s3Bucket       string
+		s3Key          string
+		s3Region       string
 	)
 
 	cmd := &cobra.Command{
@@ -108,11 +125,15 @@ func syncCmd() *cobra.Command {
 			}
 
 			opts := review.PipelineOptions{
-				Cfg:          cfg,
-				Repo:         repo,
-				GithubToken:  requireEnv("GITHUB_TOKEN"),
-				OpenAIKey:    os.Getenv("OPENAI_API_KEY"),
-				AnthropicKey: os.Getenv("ANTHROPIC_API_KEY"),
+				Cfg:            cfg,
+				Repo:           repo,
+				GithubToken:    requireEnv("GITHUB_TOKEN"),
+				OpenAIKey:      os.Getenv("OPENAI_API_KEY"),
+				AnthropicKey:   os.Getenv("ANTHROPIC_API_KEY"),
+				StorageBackend: storageBackend,
+				S3Bucket:       s3Bucket,
+				S3Key:          s3Key,
+				S3Region:       s3Region,
 			}
 			pipeline, err := review.NewPipeline(ctx, opts)
 			if err != nil {
@@ -131,6 +152,10 @@ func syncCmd() *cobra.Command {
 	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repo slug owner/repo (required)")
 	cmd.Flags().IntVar(&prNumber, "pr", 0, "Pull request number (required)")
 	cmd.Flags().StringVar(&configPath, "config", ".review-harness.yaml", "Config file path")
+	cmd.Flags().StringVar(&storageBackend, "storage", "", "Storage backend: local or s3 (overrides config)")
+	cmd.Flags().StringVar(&s3Bucket, "s3-bucket", "", "S3 bucket for memory storage")
+	cmd.Flags().StringVar(&s3Key, "s3-key", "", "S3 object key for memory DB")
+	cmd.Flags().StringVar(&s3Region, "s3-region", "", "AWS region")
 	_ = cmd.MarkFlagRequired("repo")
 	_ = cmd.MarkFlagRequired("pr")
 	return cmd

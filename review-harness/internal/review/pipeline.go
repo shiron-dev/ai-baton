@@ -16,37 +16,69 @@ import (
 	"github.com/shiron-dev/ai-baton/internal/judge"
 	"github.com/shiron-dev/ai-baton/internal/memory"
 	"github.com/shiron-dev/ai-baton/internal/schema"
+	"github.com/shiron-dev/ai-baton/internal/storage"
 )
 
 // Pipeline orchestrates the full review flow (plan.md §7).
 type Pipeline struct {
-	cfg          *config.Config
-	gh           *githubadapter.Client
-	reviewAgent  agent.Agent
-	store        memory.Store
-	retriever    *memory.Retriever
+	cfg           *config.Config
+	gh            *githubadapter.Client
+	reviewAgent   agent.Agent
+	store         memory.Store
+	retriever     *memory.Retriever
 	canonicalizer *interpreter.Canonicalizer
-	embedder     *openaiEmbedder
-	judger       judge.Judge
-	filter       *Filter
-	publisher    *Publisher
-	repo         string
-	dryRun       bool
+	embedder      *openaiEmbedder
+	judger        judge.Judge
+	filter        *Filter
+	publisher     *Publisher
+	backend       storage.Backend
+	repo          string
+	dryRun        bool
 }
 
 // PipelineOptions configures the Pipeline.
 type PipelineOptions struct {
-	Cfg            *config.Config
-	Repo           string
-	GithubToken    string
-	OpenAIKey      string
-	AnthropicKey   string
-	DryRun         bool
+	Cfg          *config.Config
+	Repo         string
+	GithubToken  string
+	OpenAIKey    string
+	AnthropicKey string
+	DryRun       bool
+	// Storage overrides: if non-empty these override cfg.Storage.*
+	StorageBackend string
+	S3Bucket       string
+	S3Key          string
+	S3Region       string
 }
 
 // NewPipeline constructs a Pipeline wiring all components together.
 func NewPipeline(ctx context.Context, opts PipelineOptions) (*Pipeline, error) {
 	cfg := opts.Cfg
+
+	// Resolve storage config (flags override YAML).
+	storageCfg := cfg.Storage
+	if opts.StorageBackend != "" {
+		storageCfg.Backend = opts.StorageBackend
+	}
+	if opts.S3Bucket != "" {
+		storageCfg.S3Bucket = opts.S3Bucket
+	}
+	if opts.S3Key != "" {
+		storageCfg.S3Key = opts.S3Key
+	}
+	if opts.S3Region != "" {
+		storageCfg.S3Region = opts.S3Region
+	}
+
+	// Build storage backend and fetch DB before opening SQLite.
+	backend, err := buildBackend(ctx, storageCfg)
+	if err != nil {
+		return nil, fmt.Errorf("storage backend: %w", err)
+	}
+	if err := backend.Fetch(ctx, cfg.Memory.Path); err != nil {
+		slog.Warn("storage fetch failed, continuing with empty DB", "err", err)
+	}
+
 	gh, err := githubadapter.NewClient(ctx, opts.GithubToken, opts.Repo)
 	if err != nil {
 		return nil, fmt.Errorf("github client: %w", err)
@@ -101,39 +133,46 @@ func NewPipeline(ctx context.Context, opts PipelineOptions) (*Pipeline, error) {
 	}
 
 	filter := NewFilter(PolicyConfig{
-		MaxComments:          cfg.Review.MaxComments,
-		MinConfidence:        cfg.Review.MinConfidence,
+		MaxComments:           cfg.Review.MaxComments,
+		MinConfidence:         cfg.Review.MinConfidence,
 		SuppressFalsePositive: cfg.Judge.SuppressFalsePositive,
 	})
 	publisher := NewPublisher(gh, opts.DryRun)
 
 	return &Pipeline{
-		cfg:          cfg,
-		gh:           gh,
-		reviewAgent:  reviewAgent,
-		store:        store,
-		retriever:    retriever,
+		cfg:           cfg,
+		gh:            gh,
+		reviewAgent:   reviewAgent,
+		store:         store,
+		retriever:     retriever,
 		canonicalizer: canonicalizer,
-		embedder:     embedder,
-		judger:       judger,
-		filter:       filter,
-		publisher:    publisher,
-		repo:         opts.Repo,
-		dryRun:       opts.DryRun,
+		embedder:      embedder,
+		judger:        judger,
+		filter:        filter,
+		publisher:     publisher,
+		backend:       backend,
+		repo:          opts.Repo,
+		dryRun:        opts.DryRun,
 	}, nil
 }
 
-// Close releases resources held by the pipeline.
+// Close releases resources and flushes the memory DB to the storage backend.
 func (p *Pipeline) Close() error {
-	return p.store.Close()
+	storeErr := p.store.Close()
+	if !p.dryRun {
+		if err := p.backend.Flush(context.Background(), p.cfg.Memory.Path); err != nil {
+			slog.Warn("storage flush failed", "err", err)
+		}
+	}
+	return storeErr
 }
 
 // RunResult summarises what a review run did.
 type RunResult struct {
-	PRNumber  int
-	Posted    int
+	PRNumber   int
+	Posted     int
 	Suppressed int
-	DryRun    bool
+	DryRun     bool
 }
 
 // Run executes the full review pipeline for a given PR (plan.md §7 steps 1-13).
@@ -196,7 +235,7 @@ func (p *Pipeline) Run(ctx context.Context, prNumber int) (*RunResult, error) {
 			continue
 		}
 		judgeResults[f.ID] = jr
-		// Only persist when a concrete memory match was used (memory_id is required by FK).
+		// Only persist when a concrete memory match was used (memory_id required by FK).
 		if jr.MemoryID != "" {
 			if err := p.store.SaveJudgeResult(ctx, jr); err != nil {
 				slog.Warn("save judge result", "err", err)
@@ -285,6 +324,22 @@ func findingToMemory(f schema.Finding, repo string, prNumber int, agentName stri
 		CanonicalClaim: interpreter.ExtractCanonicalClaim(&f),
 		Outcome:        schema.OutcomePending,
 		CreatedAt:      time.Now().UTC(),
+	}
+}
+
+func buildBackend(ctx context.Context, cfg config.StorageConfig) (storage.Backend, error) {
+	switch cfg.Backend {
+	case "s3":
+		if cfg.S3Bucket == "" {
+			return nil, fmt.Errorf("storage.s3_bucket is required when storage.backend=s3")
+		}
+		return storage.NewS3Backend(ctx, storage.S3Config{
+			Bucket: cfg.S3Bucket,
+			Key:    cfg.S3Key,
+			Region: cfg.S3Region,
+		})
+	default:
+		return storage.LocalBackend{}, nil
 	}
 }
 

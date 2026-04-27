@@ -14,6 +14,7 @@ type Config struct {
 	Review  ReviewConfig  `yaml:"review"`
 	Context ContextConfig `yaml:"context"`
 	Memory  MemoryConfig  `yaml:"memory"`
+	Storage StorageConfig `yaml:"storage"`
 	Judge   JudgeConfig   `yaml:"judge"`
 	Labels  LabelConfig   `yaml:"labels"`
 }
@@ -63,6 +64,15 @@ type EmbeddingConfig struct {
 	Model    string `yaml:"model"`
 }
 
+// StorageConfig controls where the SQLite memory database is persisted.
+type StorageConfig struct {
+	// Backend is "local" or "s3". Defaults to "local" when empty.
+	Backend  string `yaml:"backend"`
+	S3Bucket string `yaml:"s3_bucket"`
+	S3Key    string `yaml:"s3_key"`
+	S3Region string `yaml:"s3_region"`
+}
+
 type JudgeConfig struct {
 	Enabled              bool   `yaml:"enabled"`
 	MaxCandidates        int    `yaml:"max_candidates"`
@@ -80,7 +90,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Version: 1,
 		Agent: AgentConfig{
-			Default: "claude",
+			Default: "codex",
 			Agents: map[string]AgentDef{
 				"codex": {
 					Command: "codex",
@@ -93,6 +103,11 @@ func DefaultConfig() *Config {
 					Timeout: 600 * time.Second,
 				},
 			},
+		},
+		Storage: StorageConfig{
+			Backend:  "s3",
+			S3Key:    "review-harness/memory.sqlite",
+			S3Region: "us-east-1",
 		},
 		Review: ReviewConfig{
 			MaxComments:   20,
