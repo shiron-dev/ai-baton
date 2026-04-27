@@ -84,12 +84,12 @@ func DefaultConfig() *Config {
 			Agents: map[string]AgentDef{
 				"codex": {
 					Command: "codex",
-					Args:    []string{"exec"},
+					Args:    []string{},
 					Timeout: 600 * time.Second,
 				},
 				"claude": {
 					Command: "claude",
-					Args:    []string{"-p"},
+					Args:    []string{"-p", "--dangerously-skip-permissions", "-"},
 					Timeout: 600 * time.Second,
 				},
 			},

@@ -40,8 +40,22 @@ func (a *ShellAgent) RunReview(ctx context.Context, req ReviewRequest) (*AgentRe
 
 	prompt := buildPrompt(req)
 
-	args := append(a.args, prompt) //nolint:gocritic
+	// If the last configured arg is "-", pass prompt via stdin; otherwise append as positional arg.
+	var args []string
+	stdinMode := len(a.args) > 0 && a.args[len(a.args)-1] == "-"
+	if stdinMode {
+		args = a.args
+	} else {
+		args = append(a.args, prompt) //nolint:gocritic
+	}
+
 	cmd := exec.CommandContext(ctx, a.command, args...)
+	if req.RepoPath != "" {
+		cmd.Dir = req.RepoPath
+	}
+	if stdinMode {
+		cmd.Stdin = strings.NewReader(prompt)
+	}
 
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
