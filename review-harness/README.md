@@ -92,6 +92,7 @@ jobs:
         with:
           pr-number: ${{ github.event.pull_request.number }}
           agent: codex
+          agent-model: gpt-5.1-codex-mini
           storage-backend: s3
           s3-bucket: ${{ secrets.REVIEW_HARNESS_S3_BUCKET }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
@@ -115,6 +116,7 @@ jobs:
 | `pr-number` | — | レビューする PR 番号（**必須**） |
 | `github-token` | `github.token` | pull-requests: write 権限を持つ GitHub トークン |
 | `agent` | `claude` | 使用するエージェント名（後述） |
+| `agent-model` | — | 対応するエージェントに渡すモデル名（例: `gpt-5.1-codex-mini`） |
 | `storage-backend` | `cloudstorage` | `cloudstorage` / `s3` / `local` |
 | `cloudstorage-bucket` | — | Cloud Storage バケット名（`storage-backend=cloudstorage` の場合に必須） |
 | `cloudstorage-object` | `review-harness/memory.sqlite` | Cloud Storage オブジェクト名 |
@@ -247,6 +249,7 @@ agent:
     codex:
       command: codex
       args: []
+      model: gpt-5.1-codex-mini
       timeout: 600s
     claude:
       command: claude
@@ -351,6 +354,7 @@ OPENAI_API_KEY=sk-xxx \
     --repo owner/repo \
     --pr 42 \
     --agent codex \
+    --agent-model gpt-5.1-codex-mini \
     --storage s3 \
     --s3-bucket my-bucket
 ```

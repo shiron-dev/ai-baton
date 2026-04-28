@@ -28,6 +28,7 @@ type AgentDef struct {
 	Command string        `yaml:"command"`
 	Args    []string      `yaml:"args"`
 	Timeout time.Duration `yaml:"timeout"`
+	Model   string        `yaml:"model"`
 }
 
 type ReviewConfig struct {
@@ -98,6 +99,7 @@ func DefaultConfig() *Config {
 					Command: "codex",
 					Args:    []string{},
 					Timeout: 600 * time.Second,
+					Model:   "gpt-5.1-codex-mini",
 				},
 				"claude": {
 					Command: "claude",

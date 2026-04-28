@@ -34,6 +34,7 @@ func reviewCmd() *cobra.Command {
 		prNumber   int
 		configPath string
 		agentName  string
+		agentModel string
 		dryRun     bool
 		// storage flags
 		storageBackend     string
@@ -55,6 +56,11 @@ func reviewCmd() *cobra.Command {
 			}
 			if agentName != "" {
 				cfg.Agent.Default = agentName
+			}
+			if agentModel != "" {
+				agentDef := cfg.Agent.Agents[cfg.Agent.Default]
+				agentDef.Model = agentModel
+				cfg.Agent.Agents[cfg.Agent.Default] = agentDef
 			}
 
 			opts := review.PipelineOptions{
@@ -97,6 +103,7 @@ func reviewCmd() *cobra.Command {
 	cmd.Flags().IntVar(&prNumber, "pr", 0, "Pull request number (required)")
 	cmd.Flags().StringVar(&configPath, "config", ".review-harness.yaml", "Config file path")
 	cmd.Flags().StringVar(&agentName, "agent", "", "Agent name (overrides config default)")
+	cmd.Flags().StringVar(&agentModel, "agent-model", "", "Agent model (overrides config agent model)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "Print findings without posting to GitHub")
 	cmd.Flags().StringVar(&storageBackend, "storage", "", "Storage backend: local or s3 (overrides config)")
 	cmd.Flags().StringVar(&s3Bucket, "s3-bucket", "", "S3 bucket for memory storage")

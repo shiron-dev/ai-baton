@@ -29,10 +29,10 @@ jobs:
         uses: ./review-harness   # use local copy; external repos use shiron-dev/ai-baton/review-harness@main
         with:
           pr-number: ${{ github.event.pull_request.number }}
-          agent: claude
+          agent: codex
+          agent-model: gpt-5.1-codex-mini
           storage-backend: cloudstorage
           cloudstorage-bucket: ${{ vars.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
   sync:
@@ -54,5 +54,4 @@ jobs:
           pr-number: ${{ github.event.pull_request.number }}
           storage-backend: cloudstorage
           cloudstorage-bucket: ${{ vars.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}
-          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}

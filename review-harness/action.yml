@@ -33,6 +33,10 @@ inputs:
     required: false
     default: 'claude'
 
+  agent-model:
+    description: 'Model to pass to the selected agent when supported.'
+    required: false
+
   # ── Storage ───────────────────────────────────────────────────────────────
   storage-backend:
     description: >
@@ -128,6 +132,11 @@ runs:
       shell: bash
       run: npm install -g @anthropic-ai/claude-code
 
+    - name: Install Codex CLI
+      if: ${{ inputs.command == 'review' && inputs.agent == 'codex' }}
+      shell: bash
+      run: npm install -g @openai/codex
+
     - name: Run review
       shell: bash
       env:
@@ -154,6 +163,7 @@ runs:
         [[ -n "${{ inputs.cloudstorage-bucket }}" ]] && ARGS+=(--cloudstorage-bucket "${{ inputs.cloudstorage-bucket }}")
         [[ -n "${{ inputs.s3-bucket }}" ]] && ARGS+=(--s3-bucket "${{ inputs.s3-bucket }}")
         [[ "${{ inputs.command }}" == "review" ]] && ARGS+=(--agent "${{ inputs.agent }}")
+        [[ "${{ inputs.command }}" == "review" && -n "${{ inputs.agent-model }}" ]] && ARGS+=(--agent-model "${{ inputs.agent-model }}")
         [[ "${{ inputs.command }}" == "review" && "${{ inputs.dry-run }}" == "true" ]] && ARGS+=(--dry-run)
 
         "$RUNNER_TEMP/review-harness" "${ARGS[@]}"

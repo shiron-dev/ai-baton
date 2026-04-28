@@ -29,6 +29,7 @@ func NewCodexAgent(def config.AgentDef) Agent {
 	return &CodexAgent{
 		command: def.Command,
 		timeout: timeout,
+		model:   def.Model,
 		parser:  &JSONParser{},
 	}
 }
