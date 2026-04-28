@@ -33,26 +33,31 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
 
       - uses: shiron-dev/ai-baton/review-harness@main
         with:
           pr-number: ${{ github.event.pull_request.number }}
           agent: claude
           storage-backend: cloudstorage
-          cloudstorage-bucket: ${{ secrets.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}
+          cloudstorage-bucket: ${{ vars.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-**必要なシークレット**
+**必要な Variables**
 
-| シークレット | 用途 |
+| Variable | 用途 |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | Claude Code / Judge / canonical claim 生成に使用 |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | GitHub Actions OIDC 用の Workload Identity Provider |
 | `GCP_SERVICE_ACCOUNT_EMAIL` | Cloud Storage へ読み書きするサービスアカウント |
 | `REVIEW_HARNESS_CLOUDSTORAGE_BUCKET` | メモリ DB を保存する Cloud Storage バケット名 |
+
+**必要な Secrets**
+
+| Secret | 用途 |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | Claude Code / Judge / canonical claim 生成に使用 |
 
 ### パターン 2: S3 + codex exec
 
@@ -306,8 +311,8 @@ PR に人間がコメントを返した場合、`sync` で過去の判定結果�
       - uses: actions/checkout@v4
       - uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
       - name: Sync human replies
         run: |
           cd review-harness
@@ -315,7 +320,7 @@ PR に人間がコメントを返した場合、`sync` で過去の判定結果�
             --repo "${{ github.repository }}" \
             --pr "${{ github.event.pull_request.number }}" \
             --storage cloudstorage \
-            --cloudstorage-bucket "${{ secrets.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}"
+            --cloudstorage-bucket "${{ vars.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```

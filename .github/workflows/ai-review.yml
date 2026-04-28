@@ -13,6 +13,7 @@ permissions:
 jobs:
   review:
     runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,8 +22,8 @@ jobs:
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
 
       - name: Run AI Review
         uses: ./review-harness   # use local copy; external repos use shiron-dev/ai-baton/review-harness@main
@@ -30,21 +31,21 @@ jobs:
           pr-number: ${{ github.event.pull_request.number }}
           agent: claude
           storage-backend: cloudstorage
-          cloudstorage-bucket: ${{ secrets.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}
+          cloudstorage-bucket: ${{ vars.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 
   sync:
     runs-on: ubuntu-latest
-    if: github.event.action == 'synchronize'
+    if: github.event.action == 'synchronize' && github.event.pull_request.head.repo.full_name == github.repository
     steps:
       - uses: actions/checkout@v4
 
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
 
       - name: Sync human replies
         uses: ./review-harness
@@ -52,6 +53,6 @@ jobs:
           command: sync
           pr-number: ${{ github.event.pull_request.number }}
           storage-backend: cloudstorage
-          cloudstorage-bucket: ${{ secrets.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}
+          cloudstorage-bucket: ${{ vars.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}
           anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}

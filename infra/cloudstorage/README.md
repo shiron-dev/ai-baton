@@ -28,17 +28,22 @@ bucket = "shiron-dev-terraform"
 prefix = "ai-baton"
 ```
 
-## GitHub Secrets
+## GitHub Variables / Secrets
 
-Set these repository secrets from the Terraform outputs:
+Set these repository variables from the Terraform outputs. They are identifiers, not secret material, and keeping them in variables prevents `google-github-actions/auth` from receiving empty inputs on PR events where secrets are not injected.
 
-| Secret | Terraform output |
+| Variable | Terraform output |
 | --- | --- |
 | `REVIEW_HARNESS_CLOUDSTORAGE_BUCKET` | `cloudstorage_bucket` |
 | `GCP_SERVICE_ACCOUNT_EMAIL` | `github_actions_service_account_email` |
 | `GCP_WORKLOAD_IDENTITY_PROVIDER` | `workload_identity_provider` |
 
-`ANTHROPIC_API_KEY` is required for Claude Code. `OPENAI_API_KEY` remains optional for embeddings.
+Set these repository secrets for API access:
+
+| Secret | Purpose |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | Required for Claude Code |
+| `OPENAI_API_KEY` | Optional for embeddings |
 
 ## GitHub Actions auth
 
@@ -53,6 +58,6 @@ permissions:
 steps:
   - uses: google-github-actions/auth@v2
     with:
-      workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-      service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+      workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
 ```
