@@ -105,7 +105,7 @@ func DefaultConfig() *Config {
 					Command: "openai",
 					Args:    []string{},
 					Timeout: 600 * time.Second,
-					Model:   "gpt-4.1-mini",
+					Model:   "gpt-4.1",
 				},
 				"claude": {
 					Command: "claude",

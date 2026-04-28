@@ -39,7 +39,7 @@ jobs:
         with:
           pr-number: ${{ github.event.pull_request.number }}
           agent: openai
-          agent-model: gpt-4.1-mini
+          agent-model: gpt-4.1
           storage-backend: cloudstorage
           cloudstorage-bucket: ${{ vars.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}
           openai-api-key: ${{ env.OPENAI_API_KEY }}
