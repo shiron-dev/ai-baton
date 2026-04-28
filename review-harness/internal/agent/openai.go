@@ -25,7 +25,7 @@ func NewOpenAIAgent(apiKey string, def config.AgentDef) Agent {
 	}
 	model := def.Model
 	if model == "" {
-		model = "gpt-5-mini"
+		model = "gpt-4.1-mini"
 	}
 	return &OpenAIAgent{
 		client:  openai.NewClient(apiKey),
@@ -46,6 +46,10 @@ func (a *OpenAIAgent) RunReview(ctx context.Context, req ReviewRequest) (*AgentR
 		Model: a.model,
 		Messages: []openai.ChatCompletionMessage{
 			{
+				Role:    openai.ChatMessageRoleSystem,
+				Content: "You are an expert code reviewer. Output only a JSON array of findings, with no markdown fences or prose.",
+			},
+			{
 				Role:    openai.ChatMessageRoleUser,
 				Content: prompt,
 			},
@@ -60,6 +64,14 @@ func (a *OpenAIAgent) RunReview(ctx context.Context, req ReviewRequest) (*AgentR
 	}
 
 	raw := resp.Choices[0].Message.Content
+	if raw == "" {
+		return nil, fmt.Errorf("openai chat completion returned empty content (model=%s, finish_reason=%s, prompt_tokens=%d, completion_tokens=%d)",
+			a.model,
+			resp.Choices[0].FinishReason,
+			resp.Usage.PromptTokens,
+			resp.Usage.CompletionTokens,
+		)
+	}
 	findings, err := a.parser.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("openai parse output: %w", err)

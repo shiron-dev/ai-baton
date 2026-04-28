@@ -116,7 +116,7 @@ jobs:
 | `pr-number` | — | レビューする PR 番号（**必須**） |
 | `github-token` | `github.token` | pull-requests: write 権限を持つ GitHub トークン |
 | `agent` | `claude` | 使用するエージェント名（後述） |
-| `agent-model` | — | 対応するエージェントに渡すモデル名（例: `gpt-5-mini`） |
+| `agent-model` | — | 対応するエージェントに渡すモデル名（例: `gpt-4.1-mini`） |
 | `storage-backend` | `cloudstorage` | `cloudstorage` / `s3` / `local` |
 | `cloudstorage-bucket` | — | Cloud Storage バケット名（`storage-backend=cloudstorage` の場合に必須） |
 | `cloudstorage-object` | `review-harness/memory.sqlite` | Cloud Storage オブジェクト名 |
@@ -255,7 +255,7 @@ agent:
     openai:
       command: openai
       args: []
-      model: gpt-5-mini
+      model: gpt-4.1-mini
       timeout: 600s
     claude:
       command: claude
