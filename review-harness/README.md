@@ -127,6 +127,7 @@ jobs:
 | `openai-api-key` | — | `openai` agent とベクトル検索の embedding に使用（`agent=openai` では必須） |
 | `config-file` | `.review-harness.yaml` | 設定ファイルのパス（ワークスペース相対） |
 | `dry-run` | `false` | `true` にすると GitHub への投稿をスキップ |
+| `log-file` | — | 指定すると stderr に加えて詳細ログをファイルへ出力 |
 | `go-version` | `1.24` | ビルドに使用する Go バージョン |
 
 ---

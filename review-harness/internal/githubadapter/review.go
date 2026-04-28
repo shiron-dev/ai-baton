@@ -3,6 +3,8 @@ package githubadapter
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"strings"
 
 	"github.com/google/go-github/v62/github"
 	"github.com/shiron-dev/ai-baton/internal/schema"
@@ -66,6 +68,18 @@ func (c *Client) PostReview(
 
 	review, _, err := c.gh.PullRequests.CreateReview(ctx, c.owner, c.repo, prNumber, req)
 	if err != nil {
+		if len(comments) > 0 && strings.Contains(err.Error(), "Line could not be resolved") {
+			slog.Warn("inline review failed due to unresolved line; retrying as summary-only review", "pr", prNumber, "inline_comments", len(comments), "err", err)
+			req.Comments = nil
+			review, _, err = c.gh.PullRequests.CreateReview(ctx, c.owner, c.repo, prNumber, req)
+			if err == nil {
+				return &PostReviewResult{
+					ReviewID: review.GetID(),
+					HTMLURL:  review.GetHTMLURL(),
+					Posted:   0,
+				}, nil
+			}
+		}
 		return nil, fmt.Errorf("create review PR %d: %w", prNumber, err)
 	}
 

@@ -271,7 +271,7 @@ func (p *Pipeline) Run(ctx context.Context, prNumber int) (*RunResult, error) {
 	slog.Info("policy applied", "allowed", len(allowed), "suppressed", suppressed)
 
 	// Step 12: post to GitHub
-	result, err := p.publisher.Publish(ctx, prNumber, diff.HeadSHA, allowed)
+	result, err := p.publisher.Publish(ctx, prNumber, diff.HeadSHA, allowed, patches)
 	if err != nil {
 		return nil, fmt.Errorf("publish: %w", err)
 	}

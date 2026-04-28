@@ -5,6 +5,9 @@
 # Go build cache
 vendor/
 
+# Logs
+*.log
+
 # SQLite databases
 *.sqlite
 *.sqlite-wal

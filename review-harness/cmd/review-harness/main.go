@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"github.com/shiron-dev/ai-baton/internal/config"
 	"github.com/shiron-dev/ai-baton/internal/review"
@@ -85,6 +86,9 @@ func setupLogger() error {
 		return nil
 	}
 
+	if err := os.MkdirAll(filepath.Dir(logFilePath), 0o755); err != nil {
+		return fmt.Errorf("create log dir: %w", err)
+	}
 	f, err := os.Create(logFilePath)
 	if err != nil {
 		return fmt.Errorf("open log file: %w", err)
