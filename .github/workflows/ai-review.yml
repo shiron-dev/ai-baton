@@ -1,0 +1,92 @@
+name: AI Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  actions: write    # required for uploading artifacts
+  id-token: write   # required for Google Workload Identity Federation
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Skip without OpenAI API key
+        if: env.OPENAI_API_KEY == ''
+        run: echo "OPENAI_API_KEY is not available for this PR; skipping AI review."
+
+      - name: Authenticate to Google Cloud
+        if: env.OPENAI_API_KEY != ''
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Run AI Review
+        if: env.OPENAI_API_KEY != ''
+        uses: ./review-harness   # use local copy; external repos use shiron-dev/ai-baton/review-harness@main
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          agent: openai
+          agent-model: gpt-4.1
+          storage-backend: cloudstorage
+          cloudstorage-bucket: ${{ vars.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}
+          openai-api-key: ${{ env.OPENAI_API_KEY }}
+          log-file: ${{ runner.temp }}/review-harness-review.log
+
+      - name: Upload review logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-harness-logs-pr${{ github.event.pull_request.number }}
+          path: ${{ runner.temp }}/review-harness-review.log
+          if-no-files-found: ignore
+
+  sync:
+    runs-on: ubuntu-latest
+    if: github.event.action == 'synchronize' && github.event.pull_request.head.repo.full_name == github.repository
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Skip without OpenAI API key
+        if: env.OPENAI_API_KEY == ''
+        run: echo "OPENAI_API_KEY is not available for this PR; skipping memory sync."
+
+      - name: Authenticate to Google Cloud
+        if: env.OPENAI_API_KEY != ''
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - name: Sync human replies
+        if: env.OPENAI_API_KEY != ''
+        uses: ./review-harness
+        with:
+          command: sync
+          pr-number: ${{ github.event.pull_request.number }}
+          storage-backend: cloudstorage
+          cloudstorage-bucket: ${{ vars.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}
+          openai-api-key: ${{ env.OPENAI_API_KEY }}
+          log-file: ${{ runner.temp }}/review-harness-sync.log
+
+      - name: Upload sync logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: review-harness-sync-logs-pr${{ github.event.pull_request.number }}
+          path: ${{ runner.temp }}/review-harness-sync.log
+          if-no-files-found: ignore

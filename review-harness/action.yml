@@ -1,0 +1,199 @@
+name: 'AI Review Memory Harness'
+description: >
+  Run AI code review on a GitHub PR with persistent memory.
+  Past review outcomes (accepted / rejected / false positive) accumulate
+  across PRs and suppress redundant comments in future runs.
+author: 'shiron-dev'
+
+branding:
+  icon: 'message-square'
+  color: 'blue'
+
+inputs:
+  command:
+    description: 'Command to run: "review" or "sync".'
+    required: false
+    default: 'review'
+
+  pr-number:
+    description: 'Pull request number to review or sync'
+    required: true
+
+  github-token:
+    description: 'GitHub token with pull-requests: write permission'
+    required: false
+    default: ${{ github.token }}
+
+  # ── Agent ────────────────────────────────────────────────────────────────
+  agent:
+    description: >
+      Agent name to use. Must match a key under `agent.agents` in
+      .review-harness.yaml (or the built-in defaults: "openai", "codex", "claude").
+      Defaults to "claude".
+    required: false
+    default: 'claude'
+
+  agent-model:
+    description: 'Model to pass to the selected agent when supported.'
+    required: false
+
+  # ── Storage ───────────────────────────────────────────────────────────────
+  storage-backend:
+    description: >
+      Where to persist the review memory database.
+      "cloudstorage" – download before review, upload after using Google Cloud Storage (default).
+      "s3"    – download before review, upload after.
+      "local" – keep the SQLite file on the runner (ephemeral; lost after run).
+    required: false
+    default: 'cloudstorage'
+
+  cloudstorage-bucket:
+    description: >
+      Google Cloud Storage bucket that holds the memory database.
+      Required when storage-backend=cloudstorage.
+      Google credentials must be configured before calling this action
+      (e.g. via google-github-actions/auth).
+    required: false
+
+  cloudstorage-object:
+    description: 'Google Cloud Storage object name for the memory database file.'
+    required: false
+    default: 'review-harness/memory.sqlite'
+
+  s3-bucket:
+    description: >
+      S3 bucket that holds the memory database.
+      Required when storage-backend=s3.
+      AWS credentials must be configured before calling this action
+      (e.g. via aws-actions/configure-aws-credentials).
+    required: false
+
+  s3-key:
+    description: 'S3 object key for the memory database file.'
+    required: false
+    default: 'review-harness/memory.sqlite'
+
+  aws-region:
+    description: 'AWS region for S3 operations.'
+    required: false
+    default: 'us-east-1'
+
+  # ── API keys ──────────────────────────────────────────────────────────────
+  anthropic-api-key:
+    description: >
+      Anthropic API key.
+      Used by Claude Code, canonical-claim generation, and the Review Judge.
+      Required when agent=claude; judge and canonicalization are skipped when absent.
+    required: false
+
+  openai-api-key:
+    description: >
+      OpenAI API key.
+      Used by the OpenAI API agent and text-embedding-3-small vector search.
+      Required when agent=openai; vector search is skipped when absent.
+    required: false
+
+  # ── Misc ─────────────────────────────────────────────────────────────────
+  config-file:
+    description: >
+      Path (relative to the caller's workspace) to a .review-harness.yaml
+      config file. Falls back to built-in defaults when the file is absent.
+    required: false
+    default: '.review-harness.yaml'
+
+  dry-run:
+    description: 'Set to "true" to print findings without posting to GitHub.'
+    required: false
+    default: 'false'
+
+  log-file:
+    description: >
+      Path to write structured logs in addition to stderr.
+      Leave empty to disable file logging.
+    required: false
+    default: ''
+
+  go-version:
+    description: 'Go version used to build review-harness.'
+    required: false
+    default: '1.24'
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+        cache: true
+        cache-dependency-path: ${{ github.action_path }}/go.sum
+
+    - name: Build review-harness
+      shell: bash
+      run: |
+        cd "${{ github.action_path }}"
+        go build -o "$RUNNER_TEMP/review-harness" ./cmd/review-harness
+
+    - name: Install Claude Code
+      if: ${{ inputs.command == 'review' && inputs.agent == 'claude' }}
+      shell: bash
+      run: npm install -g @anthropic-ai/claude-code
+
+    - name: Install Codex CLI
+      if: ${{ inputs.command == 'review' && inputs.agent == 'codex' }}
+      shell: bash
+      run: npm install -g @openai/codex
+
+    - name: Validate Codex authentication
+      if: ${{ inputs.command == 'review' && inputs.agent == 'codex' }}
+      shell: bash
+      env:
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+      run: |
+        if [[ -z "$OPENAI_API_KEY" ]]; then
+          echo "OPENAI_API_KEY is required when agent=codex. Set the openai-api-key input from a GitHub Secret." >&2
+          exit 1
+        fi
+
+    - name: Validate OpenAI authentication
+      if: ${{ inputs.command == 'review' && inputs.agent == 'openai' }}
+      shell: bash
+      env:
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+      run: |
+        if [[ -z "$OPENAI_API_KEY" ]]; then
+          echo "OPENAI_API_KEY is required when agent=openai. Set the openai-api-key input from a GitHub Secret." >&2
+          exit 1
+        fi
+
+    - name: Run review
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token }}
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+      run: |
+        case "${{ inputs.command }}" in
+          review|sync) ;;
+          *) echo "Unsupported command: ${{ inputs.command }}" >&2; exit 1 ;;
+        esac
+
+        ARGS=(
+          "${{ inputs.command }}"
+          --repo "${{ github.repository }}"
+          --pr   "${{ inputs.pr-number }}"
+          --config "${{ inputs.config-file }}"
+          --storage "${{ inputs.storage-backend }}"
+          --cloudstorage-object "${{ inputs.cloudstorage-object }}"
+          --s3-key "${{ inputs.s3-key }}"
+          --s3-region "${{ inputs.aws-region }}"
+        )
+
+        [[ -n "${{ inputs.cloudstorage-bucket }}" ]] && ARGS+=(--cloudstorage-bucket "${{ inputs.cloudstorage-bucket }}")
+        [[ -n "${{ inputs.s3-bucket }}" ]] && ARGS+=(--s3-bucket "${{ inputs.s3-bucket }}")
+        [[ "${{ inputs.command }}" == "review" ]] && ARGS+=(--agent "${{ inputs.agent }}")
+        [[ "${{ inputs.command }}" == "review" && -n "${{ inputs.agent-model }}" ]] && ARGS+=(--agent-model "${{ inputs.agent-model }}")
+        [[ "${{ inputs.command }}" == "review" && "${{ inputs.dry-run }}" == "true" ]] && ARGS+=(--dry-run)
+        [[ -n "${{ inputs.log-file }}" ]] && ARGS+=(--log-file "${{ inputs.log-file }}")
+
+        "$RUNNER_TEMP/review-harness" "${ARGS[@]}"

@@ -1,0 +1,37 @@
+# Binaries
+/review-harness-bin
+*.exe
+
+# Go build cache
+vendor/
+
+# Logs
+*.log
+
+# SQLite databases
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+
+# Config files with secrets
+*.local.yaml
+*.local.yml
+
+# Terraform local state/cache
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Review harness runtime data
+.review-harness/
