@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
 	"os"
 
@@ -23,7 +22,7 @@ var rootCmd = &cobra.Command{
 }
 
 func main() {
-	rootCmd.PersistentFlags().StringVar(&logFilePath, "log-file", "", "Path to write logs in addition to stderr (optional)")
+	rootCmd.PersistentFlags().StringVar(&logFilePath, "log-file", "", "Path to write verbose logs (Debug level) in addition to stderr (optional)")
 	rootCmd.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
 		return setupLogger()
 	}
@@ -38,19 +37,62 @@ func main() {
 	}
 }
 
-func setupLogger() error {
-	w := io.Writer(os.Stderr)
-	if logFilePath != "" {
-		f, err := os.Create(logFilePath)
-		if err != nil {
-			return fmt.Errorf("open log file: %w", err)
+// multiHandler fans out slog records to multiple handlers.
+type multiHandler struct {
+	handlers []slog.Handler
+}
+
+func (h *multiHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	for _, handler := range h.handlers {
+		if handler.Enabled(ctx, level) {
+			return true
 		}
-		logFileHandle = f
-		w = io.MultiWriter(os.Stderr, f)
 	}
-	slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	})))
+	return false
+}
+
+func (h *multiHandler) Handle(ctx context.Context, r slog.Record) error {
+	for _, handler := range h.handlers {
+		if handler.Enabled(ctx, r.Level) {
+			if err := handler.Handle(ctx, r.Clone()); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (h *multiHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	handlers := make([]slog.Handler, len(h.handlers))
+	for i, handler := range h.handlers {
+		handlers[i] = handler.WithAttrs(attrs)
+	}
+	return &multiHandler{handlers: handlers}
+}
+
+func (h *multiHandler) WithGroup(name string) slog.Handler {
+	handlers := make([]slog.Handler, len(h.handlers))
+	for i, handler := range h.handlers {
+		handlers[i] = handler.WithGroup(name)
+	}
+	return &multiHandler{handlers: handlers}
+}
+
+func setupLogger() error {
+	stderrHandler := slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
+	if logFilePath == "" {
+		slog.SetDefault(slog.New(stderrHandler))
+		return nil
+	}
+
+	f, err := os.Create(logFilePath)
+	if err != nil {
+		return fmt.Errorf("open log file: %w", err)
+	}
+	logFileHandle = f
+	// File handler captures Debug and above; stderr stays at Info.
+	fileHandler := slog.NewTextHandler(f, &slog.HandlerOptions{Level: slog.LevelDebug})
+	slog.SetDefault(slog.New(&multiHandler{handlers: []slog.Handler{stderrHandler, fileHandler}}))
 	return nil
 }
 

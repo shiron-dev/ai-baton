@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/sashabaranov/go-openai"
@@ -42,6 +43,8 @@ func (a *OpenAIAgent) RunReview(ctx context.Context, req ReviewRequest) (*AgentR
 	defer cancel()
 
 	prompt := buildPrompt(req)
+	slog.Debug("agent prompt", "agent", "openai", "model", a.model, "prompt", prompt)
+
 	resp, err := a.client.CreateChatCompletion(ctx, openai.ChatCompletionRequest{
 		Model: a.model,
 		Messages: []openai.ChatCompletionMessage{
@@ -64,6 +67,12 @@ func (a *OpenAIAgent) RunReview(ctx context.Context, req ReviewRequest) (*AgentR
 	}
 
 	raw := resp.Choices[0].Message.Content
+	slog.Debug("agent raw output", "agent", "openai", "model", a.model,
+		"output", raw,
+		"prompt_tokens", resp.Usage.PromptTokens,
+		"completion_tokens", resp.Usage.CompletionTokens,
+		"finish_reason", resp.Choices[0].FinishReason,
+	)
 	if raw == "" {
 		return nil, fmt.Errorf("openai chat completion returned empty content (model=%s, finish_reason=%s, prompt_tokens=%d, completion_tokens=%d)",
 			a.model,

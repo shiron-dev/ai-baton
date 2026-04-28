@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"strings"
@@ -64,6 +65,8 @@ func (a *CodexAgent) RunReview(ctx context.Context, req ReviewRequest) (*AgentRe
 	}
 
 	prompt := buildPrompt(req)
+	slog.Debug("agent prompt", "agent", "codex", "prompt", prompt)
+
 	cmd := exec.CommandContext(ctx, a.command, args...)
 	cmd.Stdin = strings.NewReader(prompt)
 
@@ -78,6 +81,7 @@ func (a *CodexAgent) RunReview(ctx context.Context, req ReviewRequest) (*AgentRe
 	if err != nil {
 		return nil, fmt.Errorf("codex: read output file: %w", err)
 	}
+	slog.Debug("agent raw output", "agent", "codex", "output", string(raw), "stderr", stderr.String())
 
 	findings, err := a.parser.Parse(string(raw))
 	if err != nil {

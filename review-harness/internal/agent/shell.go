@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"log/slog"
 	"os/exec"
 	"strings"
 	"time"
@@ -39,6 +40,7 @@ func (a *ShellAgent) RunReview(ctx context.Context, req ReviewRequest) (*AgentRe
 	defer cancel()
 
 	prompt := buildPrompt(req)
+	slog.Debug("agent prompt", "agent", a.name, "prompt", prompt)
 
 	// If the last configured arg is "-", pass prompt via stdin; otherwise append as positional arg.
 	var args []string
@@ -66,6 +68,8 @@ func (a *ShellAgent) RunReview(ctx context.Context, req ReviewRequest) (*AgentRe
 	}
 
 	raw := stdout.String()
+	slog.Debug("agent raw output", "agent", a.name, "output", raw, "stderr", stderr.String())
+
 	findings, err := a.parser.Parse(raw)
 	if err != nil {
 		return nil, fmt.Errorf("agent %s parse output: %w", a.name, err)
