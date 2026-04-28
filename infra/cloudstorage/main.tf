@@ -1,8 +1,20 @@
+resource "google_project_service" "required" {
+  for_each = local.enable_project_services ? local.required_project_services : []
+
+  project            = local.project_id
+  service            = each.value
+  disable_on_destroy = false
+}
+
 resource "google_storage_bucket" "review_memory" {
-  name                        = var.bucket_name
-  location                    = var.bucket_location
+  name                        = local.bucket_name
+  location                    = local.bucket_location
   uniform_bucket_level_access = true
   public_access_prevention    = "enforced"
+
+  depends_on = [
+    google_project_service.required,
+  ]
 
   versioning {
     enabled = true
@@ -21,8 +33,12 @@ resource "google_storage_bucket" "review_memory" {
 }
 
 resource "google_service_account" "github_actions" {
-  account_id   = var.service_account_id
+  account_id   = local.service_account_id
   display_name = "review-harness GitHub Actions"
+
+  depends_on = [
+    google_project_service.required,
+  ]
 }
 
 resource "google_storage_bucket_iam_member" "github_actions_object_user" {
@@ -32,14 +48,18 @@ resource "google_storage_bucket_iam_member" "github_actions_object_user" {
 }
 
 resource "google_iam_workload_identity_pool" "github_actions" {
-  workload_identity_pool_id = var.workload_identity_pool_id
+  workload_identity_pool_id = local.workload_identity_pool_id
   display_name              = "GitHub Actions"
   description               = "OIDC identities from GitHub Actions."
+
+  depends_on = [
+    google_project_service.required,
+  ]
 }
 
 resource "google_iam_workload_identity_pool_provider" "github_actions" {
   workload_identity_pool_id          = google_iam_workload_identity_pool.github_actions.workload_identity_pool_id
-  workload_identity_pool_provider_id = var.workload_identity_provider_id
+  workload_identity_pool_provider_id = local.workload_identity_provider_id
   display_name                       = "GitHub"
 
   attribute_mapping = {
@@ -49,7 +69,7 @@ resource "google_iam_workload_identity_pool_provider" "github_actions" {
     "attribute.ref"        = "assertion.ref"
   }
 
-  attribute_condition = "assertion.repository == '${var.github_repository}'"
+  attribute_condition = "assertion.repository == '${local.github_repository}'"
 
   oidc {
     issuer_uri = "https://token.actions.githubusercontent.com"
@@ -59,5 +79,5 @@ resource "google_iam_workload_identity_pool_provider" "github_actions" {
 resource "google_service_account_iam_member" "github_actions_workload_identity_user" {
   service_account_id = google_service_account.github_actions.name
   role               = "roles/iam.workloadIdentityUser"
-  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_actions.name}/attribute.repository/${var.github_repository}"
+  member             = "principalSet://iam.googleapis.com/${google_iam_workload_identity_pool.github_actions.name}/attribute.repository/${local.github_repository}"
 }
