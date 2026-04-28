@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/sashabaranov/go-openai"
 	"github.com/shiron-dev/ai-baton/internal/config"
+	"github.com/shiron-dev/ai-baton/internal/schema"
 )
 
 // OpenAIAgent implements Agent using the OpenAI API directly.
@@ -42,6 +44,30 @@ func (a *OpenAIAgent) RunReview(ctx context.Context, req ReviewRequest) (*AgentR
 	ctx, cancel := context.WithTimeout(ctx, a.timeout)
 	defer cancel()
 
+	chunks := splitDiffByFile(req.Diff)
+
+	var allFindings []schema.Finding
+	var rawParts []string
+
+	for _, chunk := range chunks {
+		chunkReq := req
+		chunkReq.Diff = chunk
+		result, err := a.runChunk(ctx, chunkReq)
+		if err != nil {
+			return nil, err
+		}
+		allFindings = append(allFindings, result.Findings...)
+		rawParts = append(rawParts, result.RawOutput)
+	}
+
+	return &AgentReviewResult{
+		RawOutput: strings.Join(rawParts, "\n"),
+		Findings:  allFindings,
+		Metadata:  map[string]string{"model": a.model},
+	}, nil
+}
+
+func (a *OpenAIAgent) runChunk(ctx context.Context, req ReviewRequest) (*AgentReviewResult, error) {
 	prompt := buildPrompt(req)
 	slog.Debug("agent prompt", "agent", "openai", "model", a.model, "prompt", prompt)
 
@@ -89,6 +115,27 @@ func (a *OpenAIAgent) RunReview(ctx context.Context, req ReviewRequest) (*AgentR
 	return &AgentReviewResult{
 		RawOutput: raw,
 		Findings:  findings,
-		Metadata:  map[string]string{"model": a.model},
 	}, nil
+}
+
+// splitDiffByFile splits a unified diff into per-file chunks.
+// Each chunk starts with the "diff --git" header for one file.
+func splitDiffByFile(diff string) []string {
+	var chunks []string
+	var current strings.Builder
+	for _, line := range strings.Split(diff, "\n") {
+		if strings.HasPrefix(line, "diff --git ") && current.Len() > 0 {
+			chunks = append(chunks, current.String())
+			current.Reset()
+		}
+		current.WriteString(line)
+		current.WriteByte('\n')
+	}
+	if current.Len() > 0 {
+		chunks = append(chunks, current.String())
+	}
+	if len(chunks) == 0 {
+		return []string{diff}
+	}
+	return chunks
 }
