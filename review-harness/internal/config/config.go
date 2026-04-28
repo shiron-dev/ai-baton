@@ -101,6 +101,12 @@ func DefaultConfig() *Config {
 					Timeout: 600 * time.Second,
 					Model:   "gpt-5.1-codex-mini",
 				},
+				"openai": {
+					Command: "openai",
+					Args:    []string{},
+					Timeout: 600 * time.Second,
+					Model:   "gpt-5-mini",
+				},
 				"claude": {
 					Command: "claude",
 					Args:    []string{"-p", "--dangerously-skip-permissions", "-"},

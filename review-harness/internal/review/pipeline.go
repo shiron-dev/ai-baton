@@ -113,6 +113,11 @@ func NewPipeline(ctx context.Context, opts PipelineOptions) (*Pipeline, error) {
 	switch cfg.Agent.Default {
 	case "codex":
 		reviewAgent = agent.NewCodexAgent(agentDef)
+	case "openai":
+		if opts.OpenAIKey == "" {
+			return nil, fmt.Errorf("OPENAI_API_KEY is required when agent=openai")
+		}
+		reviewAgent = agent.NewOpenAIAgent(opts.OpenAIKey, agentDef)
 	case "claude":
 		reviewAgent = agent.NewClaudeAgent(agentDef)
 	default:

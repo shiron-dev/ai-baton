@@ -116,7 +116,7 @@ jobs:
 | `pr-number` | — | レビューする PR 番号（**必須**） |
 | `github-token` | `github.token` | pull-requests: write 権限を持つ GitHub トークン |
 | `agent` | `claude` | 使用するエージェント名（後述） |
-| `agent-model` | — | 対応するエージェントに渡すモデル名（例: `gpt-5.1-codex-mini`） |
+| `agent-model` | — | 対応するエージェントに渡すモデル名（例: `gpt-5-mini`） |
 | `storage-backend` | `cloudstorage` | `cloudstorage` / `s3` / `local` |
 | `cloudstorage-bucket` | — | Cloud Storage バケット名（`storage-backend=cloudstorage` の場合に必須） |
 | `cloudstorage-object` | `review-harness/memory.sqlite` | Cloud Storage オブジェクト名 |
@@ -124,7 +124,7 @@ jobs:
 | `s3-key` | `review-harness/memory.sqlite` | S3 オブジェクトキー |
 | `aws-region` | `us-east-1` | AWS リージョン |
 | `anthropic-api-key` | — | Claude Code・Judge・canonical claim 生成に使用（省略時は Claude/Judge/canonicalization を使用不可） |
-| `openai-api-key` | — | ベクトル検索の embedding に使用（省略時はスキップ） |
+| `openai-api-key` | — | `openai` agent とベクトル検索の embedding に使用（`agent=openai` では必須） |
 | `config-file` | `.review-harness.yaml` | 設定ファイルのパス（ワークスペース相対） |
 | `dry-run` | `false` | `true` にすると GitHub への投稿をスキップ |
 | `go-version` | `1.24` | ビルドに使用する Go バージョン |
@@ -140,6 +140,7 @@ jobs:
 | 名前 | コマンド | 動作 |
 | --- | --- | --- |
 | `claude`（デフォルト） | `claude -p` | `ANTHROPIC_API_KEY` を使い、stdin でプロンプトを渡して JSON を取得 |
+| `openai` | OpenAI API | `OPENAI_API_KEY` を使い、OpenAI API から JSON を取得 |
 | `codex` | `codex exec` | stdin でプロンプトを渡し `--output-last-message` で JSON を取得 |
 
 ### カスタムエージェントの追加
@@ -250,6 +251,11 @@ agent:
       command: codex
       args: []
       model: gpt-5.1-codex-mini
+      timeout: 600s
+    openai:
+      command: openai
+      args: []
+      model: gpt-5-mini
       timeout: 600s
     claude:
       command: claude

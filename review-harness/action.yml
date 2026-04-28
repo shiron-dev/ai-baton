@@ -28,7 +28,7 @@ inputs:
   agent:
     description: >
       Agent name to use. Must match a key under `agent.agents` in
-      .review-harness.yaml (or the built-in defaults: "codex", "claude").
+      .review-harness.yaml (or the built-in defaults: "openai", "codex", "claude").
       Defaults to "claude".
     required: false
     default: 'claude'
@@ -89,8 +89,8 @@ inputs:
   openai-api-key:
     description: >
       OpenAI API key.
-      Used for text-embedding-3-small to power vector search.
-      Optional – vector search is skipped when absent.
+      Used by the OpenAI API agent and text-embedding-3-small vector search.
+      Required when agent=openai; vector search is skipped when absent.
     required: false
 
   # ── Misc ─────────────────────────────────────────────────────────────────
@@ -136,6 +136,28 @@ runs:
       if: ${{ inputs.command == 'review' && inputs.agent == 'codex' }}
       shell: bash
       run: npm install -g @openai/codex
+
+    - name: Validate Codex authentication
+      if: ${{ inputs.command == 'review' && inputs.agent == 'codex' }}
+      shell: bash
+      env:
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+      run: |
+        if [[ -z "$OPENAI_API_KEY" ]]; then
+          echo "OPENAI_API_KEY is required when agent=codex. Set the openai-api-key input from a GitHub Secret." >&2
+          exit 1
+        fi
+
+    - name: Validate OpenAI authentication
+      if: ${{ inputs.command == 'review' && inputs.agent == 'openai' }}
+      shell: bash
+      env:
+        OPENAI_API_KEY: ${{ inputs.openai-api-key }}
+      run: |
+        if [[ -z "$OPENAI_API_KEY" ]]; then
+          echo "OPENAI_API_KEY is required when agent=openai. Set the openai-api-key input from a GitHub Secret." >&2
+          exit 1
+        fi
 
     - name: Run review
       shell: bash
