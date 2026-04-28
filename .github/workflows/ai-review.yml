@@ -8,6 +8,7 @@ permissions:
   contents: read
   pull-requests: write
   issues: write
+  actions: write    # required for uploading artifacts
   id-token: write   # required for Google Workload Identity Federation
 
 jobs:
@@ -42,6 +43,7 @@ jobs:
           storage-backend: cloudstorage
           cloudstorage-bucket: ${{ vars.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}
           openai-api-key: ${{ env.OPENAI_API_KEY }}
+          log-file: ${{ runner.temp }}/review-harness-review.log
 
   sync:
     runs-on: ubuntu-latest
@@ -71,3 +73,4 @@ jobs:
           storage-backend: cloudstorage
           cloudstorage-bucket: ${{ vars.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}
           openai-api-key: ${{ env.OPENAI_API_KEY }}
+          log-file: ${{ runner.temp }}/review-harness-sync.log

@@ -106,6 +106,14 @@ inputs:
     required: false
     default: 'false'
 
+  log-file:
+    description: >
+      Path to write structured logs in addition to stderr.
+      When set, logs are written to this file and uploaded as a GitHub Actions artifact.
+      Leave empty to disable file logging.
+    required: false
+    default: ''
+
   go-version:
     description: 'Go version used to build review-harness.'
     required: false
@@ -187,5 +195,14 @@ runs:
         [[ "${{ inputs.command }}" == "review" ]] && ARGS+=(--agent "${{ inputs.agent }}")
         [[ "${{ inputs.command }}" == "review" && -n "${{ inputs.agent-model }}" ]] && ARGS+=(--agent-model "${{ inputs.agent-model }}")
         [[ "${{ inputs.command }}" == "review" && "${{ inputs.dry-run }}" == "true" ]] && ARGS+=(--dry-run)
+        [[ -n "${{ inputs.log-file }}" ]] && ARGS+=(--log-file "${{ inputs.log-file }}")
 
         "$RUNNER_TEMP/review-harness" "${ARGS[@]}"
+
+    - name: Upload review logs
+      if: ${{ always() && inputs.log-file != '' }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: review-harness-logs-${{ inputs.command }}-pr${{ inputs.pr-number }}
+        path: ${{ inputs.log-file }}
+        if-no-files-found: ignore

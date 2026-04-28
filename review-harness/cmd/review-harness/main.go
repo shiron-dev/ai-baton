@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 
@@ -11,21 +12,46 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	logFilePath   string
+	logFileHandle *os.File
+)
+
 var rootCmd = &cobra.Command{
 	Use:   "review-harness",
 	Short: "AI Review Memory Harness - accumulates review knowledge across PRs",
 }
 
 func main() {
-	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
-		Level: slog.LevelInfo,
-	})))
+	rootCmd.PersistentFlags().StringVar(&logFilePath, "log-file", "", "Path to write logs in addition to stderr (optional)")
+	rootCmd.PersistentPreRunE = func(_ *cobra.Command, _ []string) error {
+		return setupLogger()
+	}
 
 	rootCmd.AddCommand(reviewCmd(), syncCmd(), embedCmd())
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	if logFileHandle != nil {
+		logFileHandle.Close()
+	}
+}
+
+func setupLogger() error {
+	w := io.Writer(os.Stderr)
+	if logFilePath != "" {
+		f, err := os.Create(logFilePath)
+		if err != nil {
+			return fmt.Errorf("open log file: %w", err)
+		}
+		logFileHandle = f
+		w = io.MultiWriter(os.Stderr, f)
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(w, &slog.HandlerOptions{
+		Level: slog.LevelInfo,
+	})))
+	return nil
 }
 
 func reviewCmd() *cobra.Command {
