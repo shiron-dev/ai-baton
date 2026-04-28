@@ -44,10 +44,12 @@ type PipelineOptions struct {
 	AnthropicKey string
 	DryRun       bool
 	// Storage overrides: if non-empty these override cfg.Storage.*
-	StorageBackend string
-	S3Bucket       string
-	S3Key          string
-	S3Region       string
+	StorageBackend     string
+	S3Bucket           string
+	S3Key              string
+	S3Region           string
+	CloudStorageBucket string
+	CloudStorageObject string
 }
 
 // NewPipeline constructs a Pipeline wiring all components together.
@@ -67,6 +69,12 @@ func NewPipeline(ctx context.Context, opts PipelineOptions) (*Pipeline, error) {
 	}
 	if opts.S3Region != "" {
 		storageCfg.S3Region = opts.S3Region
+	}
+	if opts.CloudStorageBucket != "" {
+		storageCfg.CloudStorageBucket = opts.CloudStorageBucket
+	}
+	if opts.CloudStorageObject != "" {
+		storageCfg.CloudStorageObject = opts.CloudStorageObject
 	}
 
 	// Build storage backend and fetch DB before opening SQLite.
@@ -362,9 +370,23 @@ func findingToMemory(f schema.Finding, repo string, prNumber int, agentName stri
 
 func buildBackend(ctx context.Context, cfg config.StorageConfig) (storage.Backend, error) {
 	switch cfg.Backend {
+	case "cloudstorage", "gcs":
+		if cfg.CloudStorageBucket == "" {
+			return nil, fmt.Errorf("storage.cloudstorage_bucket is required when storage.backend=cloudstorage")
+		}
+		if cfg.CloudStorageObject == "" {
+			cfg.CloudStorageObject = "review-harness/memory.sqlite"
+		}
+		return storage.NewCloudStorageBackend(ctx, storage.CloudStorageConfig{
+			Bucket: cfg.CloudStorageBucket,
+			Object: cfg.CloudStorageObject,
+		})
 	case "s3":
 		if cfg.S3Bucket == "" {
 			return nil, fmt.Errorf("storage.s3_bucket is required when storage.backend=s3")
+		}
+		if cfg.S3Key == "" {
+			cfg.S3Key = "review-harness/memory.sqlite"
 		}
 		return storage.NewS3Backend(ctx, storage.S3Config{
 			Bucket: cfg.S3Bucket,

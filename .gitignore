@@ -14,6 +14,13 @@ vendor/
 *.local.yaml
 *.local.yml
 
+# Terraform local state/cache
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+
 # IDE
 .idea/
 .vscode/

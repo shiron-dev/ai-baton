@@ -2,15 +2,59 @@
 
 GitHub Pull Request に対して AI コードレビューを実行し、過去のレビュー結果（承認・却下・false positive）を SQLite に蓄積して次回以降の判定に活用するツールです。
 
-- **エージェントは差し替え可能** — Codex CLI、Claude Code CLI、または任意の CLI ツールを使用できます
-- **ストレージは選択可能** — S3（デフォルト）またはローカルファイルシステム
+- **エージェントは差し替え可能** — Claude Code CLI（デフォルト）、Codex CLI、または任意の CLI ツールを使用できます
+- **ストレージは選択可能** — Google Cloud Storage（デフォルト）、S3、またはローカルファイルシステム
 - **Reusable GitHub Action** として外部リポジトリから呼び出せます
 
 ---
 
 ## クイックスタート
 
-### 最小構成（S3 + Codex）
+### パターン 1: Cloud Storage + Claude Code API key
+
+```yaml
+# .github/workflows/ai-review.yml
+name: AI Review
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  id-token: write   # Workload Identity Federation で GCP に認証する場合
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
+
+      - uses: shiron-dev/ai-baton/review-harness@main
+        with:
+          pr-number: ${{ github.event.pull_request.number }}
+          agent: claude
+          storage-backend: cloudstorage
+          cloudstorage-bucket: ${{ secrets.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+**必要なシークレット**
+
+| シークレット | 用途 |
+| --- | --- |
+| `ANTHROPIC_API_KEY` | Claude Code / Judge / canonical claim 生成に使用 |
+| `GCP_WORKLOAD_IDENTITY_PROVIDER` | GitHub Actions OIDC 用の Workload Identity Provider |
+| `GCP_SERVICE_ACCOUNT_EMAIL` | Cloud Storage へ読み書きするサービスアカウント |
+| `REVIEW_HARNESS_CLOUDSTORAGE_BUCKET` | メモリ DB を保存する Cloud Storage バケット名 |
+
+### パターン 2: S3 + codex exec
 
 ```yaml
 # .github/workflows/ai-review.yml
@@ -36,10 +80,16 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
 
+      - name: Install Codex CLI
+        run: npm install -g @openai/codex
+
       - uses: shiron-dev/ai-baton/review-harness@main
         with:
           pr-number: ${{ github.event.pull_request.number }}
+          agent: codex
+          storage-backend: s3
           s3-bucket: ${{ secrets.REVIEW_HARNESS_S3_BUCKET }}
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
 ```
 
 **必要なシークレット**
@@ -48,6 +98,7 @@ jobs:
 | --- | --- |
 | `AWS_ROLE_ARN` | S3 への読み書き権限を持つ IAM ロール（OIDC） |
 | `REVIEW_HARNESS_S3_BUCKET` | メモリ DB を保存する S3 バケット名 |
+| `OPENAI_API_KEY` | codex exec と embedding に使用 |
 
 ---
 
@@ -55,14 +106,17 @@ jobs:
 
 | インプット | デフォルト | 説明 |
 | --- | --- | --- |
+| `command` | `review` | 実行するコマンド。`review` または `sync` |
 | `pr-number` | — | レビューする PR 番号（**必須**） |
 | `github-token` | `github.token` | pull-requests: write 権限を持つ GitHub トークン |
-| `agent` | `codex` | 使用するエージェント名（後述） |
-| `storage-backend` | `s3` | `s3` または `local` |
+| `agent` | `claude` | 使用するエージェント名（後述） |
+| `storage-backend` | `cloudstorage` | `cloudstorage` / `s3` / `local` |
+| `cloudstorage-bucket` | — | Cloud Storage バケット名（`storage-backend=cloudstorage` の場合に必須） |
+| `cloudstorage-object` | `review-harness/memory.sqlite` | Cloud Storage オブジェクト名 |
 | `s3-bucket` | — | S3 バケット名（`storage-backend=s3` の場合に必須） |
 | `s3-key` | `review-harness/memory.sqlite` | S3 オブジェクトキー |
 | `aws-region` | `us-east-1` | AWS リージョン |
-| `anthropic-api-key` | — | Judge・canonical claim 生成に使用（省略時はスキップ） |
+| `anthropic-api-key` | — | Claude Code・Judge・canonical claim 生成に使用（省略時は Claude/Judge/canonicalization を使用不可） |
 | `openai-api-key` | — | ベクトル検索の embedding に使用（省略時はスキップ） |
 | `config-file` | `.review-harness.yaml` | 設定ファイルのパス（ワークスペース相対） |
 | `dry-run` | `false` | `true` にすると GitHub への投稿をスキップ |
@@ -78,8 +132,8 @@ jobs:
 
 | 名前 | コマンド | 動作 |
 | --- | --- | --- |
-| `codex`（デフォルト） | `codex exec` | stdin でプロンプトを渡し `--output-last-message` で JSON を取得 |
-| `claude` | `claude -p` | stdin でプロンプトを渡して JSON を取得 |
+| `claude`（デフォルト） | `claude -p` | `ANTHROPIC_API_KEY` を使い、stdin でプロンプトを渡して JSON を取得 |
+| `codex` | `codex exec` | stdin でプロンプトを渡し `--output-last-message` で JSON を取得 |
 
 ### カスタムエージェントの追加
 
@@ -133,7 +187,22 @@ agent:
 
 ## ストレージの設定
 
-### S3（デフォルト）
+### Google Cloud Storage（デフォルト）
+
+レビュー開始前に Cloud Storage から SQLite DB をダウンロードし、終了後にアップロードします。Google 認証は Application Default Credentials（Workload Identity Federation / `GOOGLE_APPLICATION_CREDENTIALS` / gcloud など）に対応します。
+
+```yaml
+storage:
+  backend: cloudstorage
+  cloudstorage_bucket: my-bucket          # action インプットでも上書き可
+  cloudstorage_object: review-harness/memory.sqlite
+```
+
+Action インプットが `.review-harness.yaml` の設定より優先されます。
+
+Terraform は [`../infra/cloudstorage`](../infra/cloudstorage) にあります。
+
+### S3
 
 レビュー開始前に S3 から SQLite DB をダウンロードし、終了後にアップロードします。AWS 認証は標準のクレデンシャルチェーン（OIDC / 環境変数 / インスタンスプロファイル）に対応します。
 
@@ -168,7 +237,7 @@ Action インプットが `.review-harness.yaml` の設定より優先されま�
 version: 1
 
 agent:
-  default: codex
+  default: claude
   agents:
     codex:
       command: codex
@@ -186,8 +255,10 @@ review:
   post_summary: true
 
 storage:
-  backend: s3
-  s3_bucket: ""           # 必須（action インプットでも渡せる）
+  backend: cloudstorage
+  cloudstorage_bucket: "" # 必須（action インプットでも渡せる）
+  cloudstorage_object: review-harness/memory.sqlite
+  s3_bucket: ""
   s3_key: review-harness/memory.sqlite
   s3_region: us-east-1
 
@@ -233,18 +304,18 @@ PR に人間がコメントを返した場合、`sync` で過去の判定結果�
     if: github.event.action == 'synchronize'
     steps:
       - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: google-github-actions/auth@v2
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: us-east-1
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT_EMAIL }}
       - name: Sync human replies
         run: |
           cd review-harness
           go run ./cmd/review-harness sync \
             --repo "${{ github.repository }}" \
             --pr "${{ github.event.pull_request.number }}" \
-            --storage s3 \
-            --s3-bucket "${{ secrets.REVIEW_HARNESS_S3_BUCKET }}"
+            --storage cloudstorage \
+            --cloudstorage-bucket "${{ secrets.REVIEW_HARNESS_CLOUDSTORAGE_BUCKET }}"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 ```
@@ -257,22 +328,24 @@ PR に人間がコメントを返した場合、`sync` で過去の判定結果�
 cd review-harness
 go build -o review-harness-bin ./cmd/review-harness
 
-# dry-run（GitHub に投稿しない）
-GITHUB_TOKEN=ghp_xxx \
-  ./review-harness-bin review \
-    --repo owner/repo \
-    --pr 42 \
-    --agent codex \
-    --storage local \
-    --dry-run
-
-# 実際に投稿
+# Cloud Storage + Claude Code API key
 GITHUB_TOKEN=ghp_xxx \
 ANTHROPIC_API_KEY=sk-ant-xxx \
 OPENAI_API_KEY=sk-xxx \
   ./review-harness-bin review \
     --repo owner/repo \
     --pr 42 \
+    --agent claude \
+    --storage cloudstorage \
+    --cloudstorage-bucket my-bucket
+
+# S3 + codex exec
+GITHUB_TOKEN=ghp_xxx \
+OPENAI_API_KEY=sk-xxx \
+  ./review-harness-bin review \
+    --repo owner/repo \
+    --pr 42 \
+    --agent codex \
     --storage s3 \
     --s3-bucket my-bucket
 ```
@@ -292,7 +365,7 @@ review-harness
   ├─ Review Judge       … 過去の false positive・却下実績に基づくコメント抑制
   ├─ Policy Filter      … max_comments / min_confidence によるフィルタリング
   ├─ Review Publisher   … inline comment + summary を GitHub に投稿
-  └─ Storage Backend    … S3 / local への SQLite DB の fetch / flush
+  └─ Storage Backend    … Cloud Storage / S3 / local への SQLite DB の fetch / flush
 ```
 
 レビューメモリの 3 層構造：

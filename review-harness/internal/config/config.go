@@ -20,8 +20,8 @@ type Config struct {
 }
 
 type AgentConfig struct {
-	Default string                  `yaml:"default"`
-	Agents  map[string]AgentDef     `yaml:"agents"`
+	Default string              `yaml:"default"`
+	Agents  map[string]AgentDef `yaml:"agents"`
 }
 
 type AgentDef struct {
@@ -66,19 +66,21 @@ type EmbeddingConfig struct {
 
 // StorageConfig controls where the SQLite memory database is persisted.
 type StorageConfig struct {
-	// Backend is "local" or "s3". Defaults to "local" when empty.
-	Backend  string `yaml:"backend"`
-	S3Bucket string `yaml:"s3_bucket"`
-	S3Key    string `yaml:"s3_key"`
-	S3Region string `yaml:"s3_region"`
+	// Backend is "local", "s3", or "cloudstorage". Defaults to "local" when empty.
+	Backend            string `yaml:"backend"`
+	S3Bucket           string `yaml:"s3_bucket"`
+	S3Key              string `yaml:"s3_key"`
+	S3Region           string `yaml:"s3_region"`
+	CloudStorageBucket string `yaml:"cloudstorage_bucket"`
+	CloudStorageObject string `yaml:"cloudstorage_object"`
 }
 
 type JudgeConfig struct {
-	Enabled              bool   `yaml:"enabled"`
-	MaxCandidates        int    `yaml:"max_candidates"`
-	SuppressFalsePositive bool  `yaml:"suppress_false_positive"`
-	Provider             string `yaml:"provider"`
-	Model                string `yaml:"model"`
+	Enabled               bool   `yaml:"enabled"`
+	MaxCandidates         int    `yaml:"max_candidates"`
+	SuppressFalsePositive bool   `yaml:"suppress_false_positive"`
+	Provider              string `yaml:"provider"`
+	Model                 string `yaml:"model"`
 }
 
 type LabelConfig struct {
@@ -90,7 +92,7 @@ func DefaultConfig() *Config {
 	return &Config{
 		Version: 1,
 		Agent: AgentConfig{
-			Default: "codex",
+			Default: "claude",
 			Agents: map[string]AgentDef{
 				"codex": {
 					Command: "codex",
@@ -105,9 +107,10 @@ func DefaultConfig() *Config {
 			},
 		},
 		Storage: StorageConfig{
-			Backend:  "s3",
-			S3Key:    "review-harness/memory.sqlite",
-			S3Region: "us-east-1",
+			Backend:            "cloudstorage",
+			CloudStorageObject: "review-harness/memory.sqlite",
+			S3Key:              "review-harness/memory.sqlite",
+			S3Region:           "us-east-1",
 		},
 		Review: ReviewConfig{
 			MaxComments:   20,
@@ -137,11 +140,11 @@ func DefaultConfig() *Config {
 			},
 		},
 		Judge: JudgeConfig{
-			Enabled:              true,
-			MaxCandidates:        10,
+			Enabled:               true,
+			MaxCandidates:         10,
 			SuppressFalsePositive: true,
-			Provider:             "anthropic",
-			Model:                "claude-haiku-4-5-20251001",
+			Provider:              "anthropic",
+			Model:                 "claude-haiku-4-5-20251001",
 		},
 		Labels: LabelConfig{
 			Lightweight: true,

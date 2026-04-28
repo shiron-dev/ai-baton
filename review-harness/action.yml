@@ -10,8 +10,13 @@ branding:
   color: 'blue'
 
 inputs:
+  command:
+    description: 'Command to run: "review" or "sync".'
+    required: false
+    default: 'review'
+
   pr-number:
-    description: 'Pull request number to review'
+    description: 'Pull request number to review or sync'
     required: true
 
   github-token:
@@ -24,18 +29,32 @@ inputs:
     description: >
       Agent name to use. Must match a key under `agent.agents` in
       .review-harness.yaml (or the built-in defaults: "codex", "claude").
-      Defaults to "codex".
+      Defaults to "claude".
     required: false
-    default: 'codex'
+    default: 'claude'
 
   # ── Storage ───────────────────────────────────────────────────────────────
   storage-backend:
     description: >
       Where to persist the review memory database.
-      "s3"    – download before review, upload after (default).
+      "cloudstorage" – download before review, upload after using Google Cloud Storage (default).
+      "s3"    – download before review, upload after.
       "local" – keep the SQLite file on the runner (ephemeral; lost after run).
     required: false
-    default: 's3'
+    default: 'cloudstorage'
+
+  cloudstorage-bucket:
+    description: >
+      Google Cloud Storage bucket that holds the memory database.
+      Required when storage-backend=cloudstorage.
+      Google credentials must be configured before calling this action
+      (e.g. via google-github-actions/auth).
+    required: false
+
+  cloudstorage-object:
+    description: 'Google Cloud Storage object name for the memory database file.'
+    required: false
+    default: 'review-harness/memory.sqlite'
 
   s3-bucket:
     description: >
@@ -59,8 +78,8 @@ inputs:
   anthropic-api-key:
     description: >
       Anthropic API key.
-      Used for canonical-claim generation and the Review Judge.
-      Optional – judge and canonicalization are skipped when absent.
+      Used by Claude Code, canonical-claim generation, and the Review Judge.
+      Required when agent=claude; judge and canonicalization are skipped when absent.
     required: false
 
   openai-api-key:
@@ -104,6 +123,11 @@ runs:
         cd "${{ github.action_path }}"
         go build -o "$RUNNER_TEMP/review-harness" ./cmd/review-harness
 
+    - name: Install Claude Code
+      if: ${{ inputs.command == 'review' && inputs.agent == 'claude' }}
+      shell: bash
+      run: npm install -g @anthropic-ai/claude-code
+
     - name: Run review
       shell: bash
       env:
@@ -111,18 +135,25 @@ runs:
         ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
         OPENAI_API_KEY: ${{ inputs.openai-api-key }}
       run: |
+        case "${{ inputs.command }}" in
+          review|sync) ;;
+          *) echo "Unsupported command: ${{ inputs.command }}" >&2; exit 1 ;;
+        esac
+
         ARGS=(
-          review
+          "${{ inputs.command }}"
           --repo "${{ github.repository }}"
           --pr   "${{ inputs.pr-number }}"
-          --agent "${{ inputs.agent }}"
           --config "${{ inputs.config-file }}"
           --storage "${{ inputs.storage-backend }}"
+          --cloudstorage-object "${{ inputs.cloudstorage-object }}"
           --s3-key "${{ inputs.s3-key }}"
           --s3-region "${{ inputs.aws-region }}"
         )
 
+        [[ -n "${{ inputs.cloudstorage-bucket }}" ]] && ARGS+=(--cloudstorage-bucket "${{ inputs.cloudstorage-bucket }}")
         [[ -n "${{ inputs.s3-bucket }}" ]] && ARGS+=(--s3-bucket "${{ inputs.s3-bucket }}")
-        [[ "${{ inputs.dry-run }}" == "true" ]] && ARGS+=(--dry-run)
+        [[ "${{ inputs.command }}" == "review" ]] && ARGS+=(--agent "${{ inputs.agent }}")
+        [[ "${{ inputs.command }}" == "review" && "${{ inputs.dry-run }}" == "true" ]] && ARGS+=(--dry-run)
 
         "$RUNNER_TEMP/review-harness" "${ARGS[@]}"

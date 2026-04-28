@@ -6,9 +6,9 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/spf13/cobra"
 	"github.com/shiron-dev/ai-baton/internal/config"
 	"github.com/shiron-dev/ai-baton/internal/review"
+	"github.com/spf13/cobra"
 )
 
 var rootCmd = &cobra.Command{
@@ -36,10 +36,12 @@ func reviewCmd() *cobra.Command {
 		agentName  string
 		dryRun     bool
 		// storage flags
-		storageBackend string
-		s3Bucket       string
-		s3Key          string
-		s3Region       string
+		storageBackend     string
+		s3Bucket           string
+		s3Key              string
+		s3Region           string
+		cloudStorageBucket string
+		cloudStorageObject string
 	)
 
 	cmd := &cobra.Command{
@@ -56,16 +58,18 @@ func reviewCmd() *cobra.Command {
 			}
 
 			opts := review.PipelineOptions{
-				Cfg:            cfg,
-				Repo:           repo,
-				GithubToken:    requireEnv("GITHUB_TOKEN"),
-				OpenAIKey:      os.Getenv("OPENAI_API_KEY"),
-				AnthropicKey:   os.Getenv("ANTHROPIC_API_KEY"),
-				DryRun:         dryRun,
-				StorageBackend: storageBackend,
-				S3Bucket:       s3Bucket,
-				S3Key:          s3Key,
-				S3Region:       s3Region,
+				Cfg:                cfg,
+				Repo:               repo,
+				GithubToken:        requireEnv("GITHUB_TOKEN"),
+				OpenAIKey:          os.Getenv("OPENAI_API_KEY"),
+				AnthropicKey:       os.Getenv("ANTHROPIC_API_KEY"),
+				DryRun:             dryRun,
+				StorageBackend:     storageBackend,
+				S3Bucket:           s3Bucket,
+				S3Key:              s3Key,
+				S3Region:           s3Region,
+				CloudStorageBucket: cloudStorageBucket,
+				CloudStorageObject: cloudStorageObject,
 			}
 			pipeline, err := review.NewPipeline(ctx, opts)
 			if err != nil {
@@ -98,6 +102,8 @@ func reviewCmd() *cobra.Command {
 	cmd.Flags().StringVar(&s3Bucket, "s3-bucket", "", "S3 bucket for memory storage")
 	cmd.Flags().StringVar(&s3Key, "s3-key", "", "S3 object key for memory DB")
 	cmd.Flags().StringVar(&s3Region, "s3-region", "", "AWS region")
+	cmd.Flags().StringVar(&cloudStorageBucket, "cloudstorage-bucket", "", "Google Cloud Storage bucket for memory storage")
+	cmd.Flags().StringVar(&cloudStorageObject, "cloudstorage-object", "", "Google Cloud Storage object name for memory DB")
 	_ = cmd.MarkFlagRequired("repo")
 	_ = cmd.MarkFlagRequired("pr")
 	return cmd
@@ -105,13 +111,15 @@ func reviewCmd() *cobra.Command {
 
 func syncCmd() *cobra.Command {
 	var (
-		repo           string
-		prNumber       int
-		configPath     string
-		storageBackend string
-		s3Bucket       string
-		s3Key          string
-		s3Region       string
+		repo               string
+		prNumber           int
+		configPath         string
+		storageBackend     string
+		s3Bucket           string
+		s3Key              string
+		s3Region           string
+		cloudStorageBucket string
+		cloudStorageObject string
 	)
 
 	cmd := &cobra.Command{
@@ -125,15 +133,17 @@ func syncCmd() *cobra.Command {
 			}
 
 			opts := review.PipelineOptions{
-				Cfg:            cfg,
-				Repo:           repo,
-				GithubToken:    requireEnv("GITHUB_TOKEN"),
-				OpenAIKey:      os.Getenv("OPENAI_API_KEY"),
-				AnthropicKey:   os.Getenv("ANTHROPIC_API_KEY"),
-				StorageBackend: storageBackend,
-				S3Bucket:       s3Bucket,
-				S3Key:          s3Key,
-				S3Region:       s3Region,
+				Cfg:                cfg,
+				Repo:               repo,
+				GithubToken:        requireEnv("GITHUB_TOKEN"),
+				OpenAIKey:          os.Getenv("OPENAI_API_KEY"),
+				AnthropicKey:       os.Getenv("ANTHROPIC_API_KEY"),
+				StorageBackend:     storageBackend,
+				S3Bucket:           s3Bucket,
+				S3Key:              s3Key,
+				S3Region:           s3Region,
+				CloudStorageBucket: cloudStorageBucket,
+				CloudStorageObject: cloudStorageObject,
 			}
 			pipeline, err := review.NewPipeline(ctx, opts)
 			if err != nil {
@@ -156,6 +166,8 @@ func syncCmd() *cobra.Command {
 	cmd.Flags().StringVar(&s3Bucket, "s3-bucket", "", "S3 bucket for memory storage")
 	cmd.Flags().StringVar(&s3Key, "s3-key", "", "S3 object key for memory DB")
 	cmd.Flags().StringVar(&s3Region, "s3-region", "", "AWS region")
+	cmd.Flags().StringVar(&cloudStorageBucket, "cloudstorage-bucket", "", "Google Cloud Storage bucket for memory storage")
+	cmd.Flags().StringVar(&cloudStorageObject, "cloudstorage-object", "", "Google Cloud Storage object name for memory DB")
 	_ = cmd.MarkFlagRequired("repo")
 	_ = cmd.MarkFlagRequired("pr")
 	return cmd
@@ -163,12 +175,14 @@ func syncCmd() *cobra.Command {
 
 func embedCmd() *cobra.Command {
 	var (
-		repo           string
-		configPath     string
-		storageBackend string
-		s3Bucket       string
-		s3Key          string
-		s3Region       string
+		repo               string
+		configPath         string
+		storageBackend     string
+		s3Bucket           string
+		s3Key              string
+		s3Region           string
+		cloudStorageBucket string
+		cloudStorageObject string
 	)
 
 	cmd := &cobra.Command{
@@ -182,15 +196,17 @@ func embedCmd() *cobra.Command {
 			}
 
 			opts := review.PipelineOptions{
-				Cfg:            cfg,
-				Repo:           repo,
-				GithubToken:    os.Getenv("GITHUB_TOKEN"),
-				OpenAIKey:      requireEnv("OPENAI_API_KEY"),
-				AnthropicKey:   os.Getenv("ANTHROPIC_API_KEY"),
-				StorageBackend: storageBackend,
-				S3Bucket:       s3Bucket,
-				S3Key:          s3Key,
-				S3Region:       s3Region,
+				Cfg:                cfg,
+				Repo:               repo,
+				GithubToken:        os.Getenv("GITHUB_TOKEN"),
+				OpenAIKey:          requireEnv("OPENAI_API_KEY"),
+				AnthropicKey:       os.Getenv("ANTHROPIC_API_KEY"),
+				StorageBackend:     storageBackend,
+				S3Bucket:           s3Bucket,
+				S3Key:              s3Key,
+				S3Region:           s3Region,
+				CloudStorageBucket: cloudStorageBucket,
+				CloudStorageObject: cloudStorageObject,
 			}
 			pipeline, err := review.NewPipeline(ctx, opts)
 			if err != nil {
@@ -213,6 +229,8 @@ func embedCmd() *cobra.Command {
 	cmd.Flags().StringVar(&s3Bucket, "s3-bucket", "", "S3 bucket for memory storage")
 	cmd.Flags().StringVar(&s3Key, "s3-key", "", "S3 object key for memory DB")
 	cmd.Flags().StringVar(&s3Region, "s3-region", "", "AWS region")
+	cmd.Flags().StringVar(&cloudStorageBucket, "cloudstorage-bucket", "", "Google Cloud Storage bucket for memory storage")
+	cmd.Flags().StringVar(&cloudStorageObject, "cloudstorage-object", "", "Google Cloud Storage object name for memory DB")
 	return cmd
 }
 
