@@ -76,7 +76,7 @@ func (a *OpenAIAgent) runChunk(ctx context.Context, req ReviewRequest) (*AgentRe
 		Messages: []openai.ChatCompletionMessage{
 			{
 				Role:    openai.ChatMessageRoleSystem,
-				Content: "You are an expert code reviewer. Output only a JSON array of findings, with no markdown fences or prose.",
+				Content: `You are an expert code reviewer. Output only a JSON object in this exact shape: {"findings":[...]}. Do not use markdown fences or prose. If there are no issues, output {"findings":[]}.`,
 			},
 			{
 				Role:    openai.ChatMessageRoleUser,
@@ -84,6 +84,9 @@ func (a *OpenAIAgent) runChunk(ctx context.Context, req ReviewRequest) (*AgentRe
 			},
 		},
 		MaxCompletionTokens: 4096,
+		ResponseFormat: &openai.ChatCompletionResponseFormat{
+			Type: openai.ChatCompletionResponseFormatTypeJSONObject,
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("openai chat completion: %w", err)

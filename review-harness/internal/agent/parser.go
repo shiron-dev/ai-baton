@@ -46,7 +46,13 @@ func (p *JSONParser) Parse(raw string) ([]schema.Finding, error) {
 func parseJSON(s string) ([]schema.Finding, error) {
 	var findings []schema.Finding
 	if err := json.Unmarshal([]byte(s), &findings); err != nil {
-		return nil, err
+		var wrapped struct {
+			Findings []schema.Finding `json:"findings"`
+		}
+		if wrapperErr := json.Unmarshal([]byte(s), &wrapped); wrapperErr != nil {
+			return nil, err
+		}
+		return wrapped.Findings, nil
 	}
 	return findings, nil
 }
